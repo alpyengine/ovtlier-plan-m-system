@@ -75,11 +75,12 @@ bool spyAllGood = spyTrend and spyBuy
 // AMPLITUD — aproximación con $MMFI si está disponible
 // $MMFI = % de acciones del SP500 sobre su MM50
 // ═══════════════════════════════════════════════════════════
-float mmfiClose = request.security("SKILLING:MMFI", timeframe.period, close)
-bool  mmfiOk    = not na(mmfiClose) ? mmfiClose > 50 : na
+float mmfiClose  = request.security("SKILLING:MMFI", timeframe.period, close)
+bool  mmfiLoaded = not na(mmfiClose)
+bool  mmfiOk     = mmfiLoaded ? mmfiClose > 50 : false
 
-// Fallback: si MMFI no carga, usamos un proxy con RSI del SPY
-bool breadthOk  = na(mmfiOk) ? spyRsi > 50 : mmfiOk
+// Fallback: si MMFI no carga, usamos RSI del SPY como proxy
+bool breadthOk   = mmfiLoaded ? mmfiOk : spyRsi > 50
 
 // ═══════════════════════════════════════════════════════════
 // SECTORES — tendencia alcista y fuerza relativa vs SPY
@@ -202,11 +203,9 @@ if barstate.islast
 
     // ── FILA 5: Amplitud ───────────────────────────────────
     f_cell(0, 5, "Amplitud",     COLOR_BG, COLOR_WHITE, size.small)
-    bool breadthStatus = not na(mmfiClose) ? mmfiClose > 50 : spyRsi > 50
-    string mmfiStr     = not na(mmfiClose) ?
-         "MMFI: " + str.tostring(mmfiClose, "#.#") : "RSI proxy: " + str.tostring(spyRsi, "#.#")
-    f_cell(1, 5, breadthStatus ? "✔ >50%" : "✘ <50%",
-         f_statusColor(breadthStatus), COLOR_WHITE, size.small)
+    string mmfiStr = mmfiLoaded ? "MMFI: " + str.tostring(mmfiClose, "#.#") : "RSI proxy: " + str.tostring(spyRsi, "#.#")
+    f_cell(1, 5, breadthOk ? "✔ >50%" : "✘ <50%",
+         f_statusColor(breadthOk), COLOR_WHITE, size.small)
     f_cell(2, 5, "%Acc>MM50",    COLOR_BG, color.new(COLOR_WHITE, 30), size.tiny)
     f_cell(3, 5, mmfiStr,        COLOR_BG, COLOR_WHITE, size.small)
     table.merge_cells(dashTable, 2, 5, 3, 5)
