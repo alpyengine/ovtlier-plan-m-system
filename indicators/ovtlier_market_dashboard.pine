@@ -1,0 +1,256 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0
+// © Outlier-Style Market Dashboard v1
+//@version=6
+indicator("Market Dashboard v1", overlay = true, max_bars_back = 500)
+
+// ═══════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════
+grp1 = "SPY — Trend Settings"
+emaFastInput  = input.int(10,  "EMA Fast",  minval = 1, group = grp1)
+emaMidInput   = input.int(20,  "EMA Mid",   minval = 1, group = grp1)
+emaSlowInput  = input.int(50,  "EMA Slow",  minval = 1, group = grp1)
+
+grp2 = "Momentum"
+rsiLengthInput = input.int(14, "RSI Length", minval = 1,  group = grp2)
+rsiBullInput   = input.int(55, "RSI Bull threshold (>)", minval = 40, maxval = 80, group = grp2)
+
+grp3 = "Volume"
+volMaInput = input.int(20, "Volume MA Length", minval = 5, group = grp3)
+
+grp4 = "Sectors (tickers exactos de TradingView)"
+tkXLK  = input.symbol("AMEX:XLK",  "Tecnología",     group = grp4)
+tkXLF  = input.symbol("AMEX:XLF",  "Financiero",     group = grp4)
+tkXLI  = input.symbol("AMEX:XLI",  "Industrial",     group = grp4)
+tkXLY  = input.symbol("AMEX:XLY",  "Consumo Discr.", group = grp4)
+tkXLC  = input.symbol("AMEX:XLC",  "Comunicaciones", group = grp4)
+tkXLV  = input.symbol("AMEX:XLV",  "Sanidad",        group = grp4)
+tkXLE  = input.symbol("AMEX:XLE",  "Energía",        group = grp4)
+
+grp5 = "Dashboard"
+posInput = input.string("Top Right", "Posición tabla",
+     options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"],
+     group = grp5)
+
+// ═══════════════════════════════════════════════════════════
+// FUNCIONES HELPER
+// ═══════════════════════════════════════════════════════════
+
+// Retorna true si el símbolo está en tendencia alcista
+f_isBullish(sym) =>
+    [c, e10, e20, e50] = request.security(sym, timeframe.period,
+         [close,
+          ta.ema(close, emaFastInput),
+          ta.ema(close, emaMidInput),
+          ta.ema(close, emaSlowInput)])
+    e10 > e20 and c > e50
+
+// Retorna rendimiento % en N días vs SPY
+f_relStrength(sym, spySym, lookback) =>
+    symClose = request.security(sym, "D", close)
+    spyClose = request.security(spySym, "D", close)
+    symRet   = (symClose / symClose[lookback] - 1) * 100
+    spyRet   = (spyClose / spyClose[lookback] - 1) * 100
+    symRet - spyRet   // positivo = supera al mercado
+
+// ═══════════════════════════════════════════════════════════
+// CÁLCULOS SPY — usa el símbolo activo del gráfico o SPY directamente
+// Ejecutar este indicador sobre el gráfico del SPY para máxima precisión
+// ═══════════════════════════════════════════════════════════
+float spyClose = request.security("AMEX:SPY", timeframe.period, close)
+float spyEma10 = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaFastInput))
+float spyEma20 = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaMidInput))
+float spyEma50 = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaSlowInput))
+float spyRsi   = request.security("AMEX:SPY", timeframe.period, ta.rsi(close, rsiLengthInput))
+float spyVol   = request.security("AMEX:SPY", timeframe.period, volume)
+float spyVolMa = request.security("AMEX:SPY", timeframe.period, ta.sma(volume, volMaInput))
+
+// Condiciones SPY
+bool spyTrend   = spyEma10 > spyEma20 and spyClose > spyEma50
+bool spyBuy     = spyRsi > rsiBullInput
+bool spyVolOk   = spyVol > spyVolMa
+bool spyAllGood = spyTrend and spyBuy
+
+// ═══════════════════════════════════════════════════════════
+// AMPLITUD — aproximación con $MMFI si está disponible
+// $MMFI = % de acciones del SP500 sobre su MM50
+// ═══════════════════════════════════════════════════════════
+float mmfiClose = request.security("SKILLING:MMFI", timeframe.period, close)
+bool  mmfiOk    = not na(mmfiClose) ? mmfiClose > 50 : na
+
+// Fallback: si MMFI no carga, usamos un proxy con RSI del SPY
+bool breadthOk  = na(mmfiOk) ? spyRsi > 50 : mmfiOk
+
+// ═══════════════════════════════════════════════════════════
+// SECTORES — tendencia alcista y fuerza relativa vs SPY
+// ═══════════════════════════════════════════════════════════
+bool xlkBull = f_isBullish(tkXLK)
+bool xlfBull = f_isBullish(tkXLF)
+bool xliBull = f_isBullish(tkXLI)
+bool xlyBull = f_isBullish(tkXLY)
+bool xlcBull = f_isBullish(tkXLC)
+bool xlvBull = f_isBullish(tkXLV)   // sanidad — informativo
+bool xleBull = f_isBullish(tkXLE)   // energía — informativo
+
+float xlkRs = f_relStrength(tkXLK, "AMEX:SPY", 20)
+float xlfRs = f_relStrength(tkXLF, "AMEX:SPY", 20)
+float xliRs = f_relStrength(tkXLI, "AMEX:SPY", 20)
+float xlyRs = f_relStrength(tkXLY, "AMEX:SPY", 20)
+float xlcRs = f_relStrength(tkXLC, "AMEX:SPY", 20)
+float xlvRs = f_relStrength(tkXLV, "AMEX:SPY", 20)
+float xleRs = f_relStrength(tkXLE, "AMEX:SPY", 20)
+
+// Sectores activos (excluye energía y sanidad por defecto, igual que el vídeo)
+int activeSectors = (xlkBull ? 1 : 0) + (xlfBull ? 1 : 0) +
+     (xliBull ? 1 : 0) + (xlyBull ? 1 : 0) + (xlcBull ? 1 : 0)
+
+// Semáforo general del mercado
+bool marketGreen = spyAllGood and breadthOk and activeSectors >= 3
+
+// ═══════════════════════════════════════════════════════════
+// COLORES
+// ═══════════════════════════════════════════════════════════
+color COLOR_GREEN  = #26a69a
+color COLOR_RED    = #ef5350
+color COLOR_YELLOW = #ffeb3b
+color COLOR_GRAY   = #546e7a
+color COLOR_BG     = color.new(#1e222d, 5)
+color COLOR_HEADER = color.new(#2a2e39, 0)
+color COLOR_WHITE  = #d1d4dc
+
+f_statusColor(cond) =>
+    cond ? COLOR_GREEN : COLOR_RED
+
+f_rsColor(val) =>
+    na(val) ? COLOR_GRAY : val > 1.0 ? COLOR_GREEN : val < -1.0 ? COLOR_RED : COLOR_YELLOW
+
+// ═══════════════════════════════════════════════════════════
+// TABLA — Dashboard principal
+// ═══════════════════════════════════════════════════════════
+var tablePos = posInput == "Top Right"    ? position.top_right    :
+     posInput == "Top Left"     ? position.top_left     :
+     posInput == "Bottom Right" ? position.bottom_right :
+     position.bottom_left
+
+var table dashTable = table.new(
+     tablePos, 4, 14,
+     bgcolor        = COLOR_BG,
+     border_color   = color.new(COLOR_GRAY, 60),
+     border_width   = 1,
+     frame_color    = color.new(COLOR_GRAY, 40),
+     frame_width    = 1)
+
+// Helper para escribir celdas
+f_cell(col, row, txt, bg, tc, ts) =>
+    table.cell(dashTable, col, row,
+         text            = txt,
+         bgcolor         = bg,
+         text_color      = tc,
+         text_size       = ts,
+         text_halign     = text.align_center)
+
+if barstate.islast
+
+    // ── FILA 0: Título general ──────────────────────────────
+    table.cell(dashTable, 0, 0,
+         text       = "◉ MARKET DASHBOARD",
+         bgcolor    = marketGreen ? color.new(COLOR_GREEN, 60) : color.new(COLOR_RED, 60),
+         text_color = COLOR_WHITE,
+         text_size  = size.normal,
+         text_halign = text.align_center)
+    table.merge_cells(dashTable, 0, 0, 3, 0)
+
+    // ── FILA 1: Headers sección SPY ────────────────────────
+    f_cell(0, 1, "SPY",         COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(1, 1, "Estado",      COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(2, 1, "Valor",       COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(3, 1, "Señal",       COLOR_HEADER, COLOR_WHITE, size.small)
+
+    // ── FILA 2: Tendencia SPY ──────────────────────────────
+    f_cell(0, 2, "Tendencia",    COLOR_BG, COLOR_WHITE, size.small)
+    f_cell(1, 2, spyTrend ? "✔ ALCISTA" : "✘ BAJISTA",
+         f_statusColor(spyTrend), COLOR_WHITE, size.small)
+    f_cell(2, 2, "E10>E20>E50",  COLOR_BG, color.new(COLOR_WHITE, 30), size.tiny)
+    f_cell(3, 2, str.tostring(spyClose, "#.##"),
+         COLOR_BG, COLOR_WHITE, size.small)
+
+    // ── FILA 3: RSI SPY ────────────────────────────────────
+    f_cell(0, 3, "Momentum",     COLOR_BG, COLOR_WHITE, size.small)
+    f_cell(1, 3, spyBuy ? "✔ COMPRA" : "✘ NEUTRO",
+         f_statusColor(spyBuy), COLOR_WHITE, size.small)
+    f_cell(2, 3, "RSI(" + str.tostring(rsiLengthInput) + ")>" + str.tostring(rsiBullInput),
+         COLOR_BG, color.new(COLOR_WHITE, 30), size.tiny)
+    f_cell(3, 3, str.tostring(spyRsi, "#.#"),
+         COLOR_BG, COLOR_WHITE, size.small)
+
+    // ── FILA 4: Volumen SPY ────────────────────────────────
+    f_cell(0, 4, "Volumen",      COLOR_BG, COLOR_WHITE, size.small)
+    f_cell(1, 4, spyVolOk ? "✔ ALTO" : "◎ BAJO",
+         spyVolOk ? COLOR_GREEN : COLOR_YELLOW, COLOR_WHITE, size.small)
+    f_cell(2, 4, "Vol > MA" + str.tostring(volMaInput),
+         COLOR_BG, color.new(COLOR_WHITE, 30), size.tiny)
+    f_cell(3, 4, "",             COLOR_BG, COLOR_WHITE, size.small)
+
+    // ── FILA 5: Amplitud ───────────────────────────────────
+    f_cell(0, 5, "Amplitud",     COLOR_BG, COLOR_WHITE, size.small)
+    bool breadthStatus = not na(mmfiClose) ? mmfiClose > 50 : spyRsi > 50
+    string mmfiStr     = not na(mmfiClose) ?
+         "MMFI: " + str.tostring(mmfiClose, "#.#") : "RSI proxy: " + str.tostring(spyRsi, "#.#")
+    f_cell(1, 5, breadthStatus ? "✔ >50%" : "✘ <50%",
+         f_statusColor(breadthStatus), COLOR_WHITE, size.small)
+    f_cell(2, 5, "%Acc>MM50",    COLOR_BG, color.new(COLOR_WHITE, 30), size.tiny)
+    f_cell(3, 5, mmfiStr,        COLOR_BG, COLOR_WHITE, size.small)
+    table.merge_cells(dashTable, 2, 5, 3, 5)
+
+    // ── FILA 6: Separador sectores ─────────────────────────
+    f_cell(0, 6, "SECTORES",     COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(1, 6, "Tendencia",    COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(2, 6, "RS 20d",       COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(3, 6, "Estado",       COLOR_HEADER, COLOR_WHITE, size.small)
+
+    // ── FILAS 7-13: Sectores ───────────────────────────────
+    type SectorData
+        string name
+        bool   bull
+        float  rs
+        bool   excluded
+
+    array<SectorData> sectors = array.from(
+         SectorData.new("Tecnología XLK",    xlkBull, xlkRs, false),
+         SectorData.new("Financiero XLF",    xlfBull, xlfRs, false),
+         SectorData.new("Industrial XLI",    xliBull, xliRs, false),
+         SectorData.new("Consumo Dis XLY",   xlyBull, xlyRs, false),
+         SectorData.new("Comunicac. XLC",    xlcBull, xlcRs, false),
+         SectorData.new("Sanidad ✘ XLV",     xlvBull, xlvRs, true),
+         SectorData.new("Energía  ✘ XLE",    xleBull, xleRs, true))
+
+    for i = 0 to 6
+        SectorData s = array.get(sectors, i)
+        int row = i + 7
+        color rowBg = s.excluded ? color.new(COLOR_GRAY, 75) : COLOR_BG
+        color nameTc = s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE
+
+        f_cell(0, row, s.name, rowBg, nameTc, size.small)
+        f_cell(1, row,
+             s.bull ? "▲ Alcista" : "▼ Bajista",
+             s.excluded ? rowBg : f_statusColor(s.bull),
+             s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE,
+             size.small)
+        f_cell(2, row,
+             not na(s.rs) ? (s.rs > 0 ? "+" : "") + str.tostring(s.rs, "#.##") + "%" : "—",
+             rowBg, f_rsColor(s.rs), size.small)
+        f_cell(3, row,
+             s.excluded ? "EXCLUIDO" : (s.bull and s.rs > 0 ? "✔ OPERAR" : "◎ ESPERAR"),
+             s.excluded ? rowBg :
+             (s.bull and s.rs > 0 ? color.new(COLOR_GREEN, 50) : color.new(COLOR_YELLOW, 60)),
+             s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE,
+             size.tiny)
+
+// ═══════════════════════════════════════════════════════════
+// FONDO DE VELA — verde/rojo suave según estado del mercado
+// ═══════════════════════════════════════════════════════════
+bgcolor(
+     marketGreen ? color.new(COLOR_GREEN, 93) :
+     spyTrend    ? color.new(COLOR_YELLOW, 93) :
+     color.new(COLOR_RED, 93),
+     title = "Market background")
