@@ -7,14 +7,14 @@
 // v1 | 2026-04-28 | Initial release — 8-condition Trend Template
 //                   table checklist, SMA plots, bg color, alerts,
 //                   version control block embedded in header & table
-// v2 | 2026-04-28 | Fix CE10156: line continuation (\) on multiline ternaries
-//                   Fix CE10123: alertcondition message must be const string —
-//                   replaced dynamic messages with alert() + kept static alertcondition
+// v4 | 2026-04-29 | Fix contrast: all table backgrounds now solid (opacity 0),
+//                   replaced semitransparent blacks with solid navy #1a1a2e,
+//                   PASS/FAIL/verdict colors fully opaque, footer silver text
 // ═══════════════════════════════════════════════════════════════════
 //@version=6
 
 // ─── VERSION CONTROL ───────────────────────────────────────────────
-string SCRIPT_VERSION = "v2"
+string SCRIPT_VERSION = "v4"
 string SCRIPT_DATE    = "2026-04-28"
 string SCRIPT_NAME    = "Ovtlier Trend Template"
 
@@ -83,9 +83,7 @@ bool partialApproval = condCount >= 6 and condCount < 8
 
 // ─── BACKGROUND COLOR ──────────────────────────────────────────────
 // Subtle background to signal overall regime on current bar
-color bgColor = fullApproval    ? color.new(color.teal,   88) : \
-               partialApproval  ? color.new(color.yellow, 90) : \
-                                  color.new(color.red,    93)
+color bgColor = fullApproval ? color.new(color.teal, 88) : partialApproval ? color.new(color.yellow, 90) : color.new(color.red, 93)
 
 bgcolor(showBgInput ? bgColor : na, title = "Trend Template Background")
 
@@ -97,15 +95,13 @@ plot(showMAsInput ? sma200 : na, "SMA 200", color = color.new(color.red,    0), 
 // ─── TABLE SETUP ───────────────────────────────────────────────────
 //@function Returns the table.position constant based on a string input
 tablePos(string pos) =>
-    pos == "Top Right"     ? position.top_right    : \
-    pos == "Top Left"      ? position.top_left     : \
-    pos == "Bottom Right"  ? position.bottom_right : \
-                             position.bottom_left
+    pos == "Top Right" ? position.top_right : pos == "Top Left" ? position.top_left : pos == "Bottom Right" ? position.bottom_right : position.bottom_left
 
-// Color helpers
-color PASS_COLOR = color.new(color.teal,  10)
-color FAIL_COLOR = color.new(color.red,   10)
-color HEAD_COLOR = color.new(color.gray,  20)
+// Color helpers — high contrast, solid backgrounds
+color PASS_COLOR = color.new(color.teal,    0)   // solid green
+color FAIL_COLOR = color.new(color.red,     0)   // solid red
+color HEAD_COLOR = color.new(color.black,   0)   // solid black header
+color ROW_COLOR  = color.new(#1a1a2e,       0)   // solid dark navy row
 color TEXT_LIGHT = color.white
 color TEXT_DARK  = color.white
 
@@ -129,11 +125,11 @@ if barstate.islast and showTableInput
          position    = tablePos(posInput),
          columns     = 2,
          rows        = 13,
-         bgcolor      = color.new(color.black, 70),
+         bgcolor      = color.new(color.black, 0),
          border_width = 1,
-         border_color = color.new(color.gray, 60),
+         border_color = color.new(color.gray, 50),
          frame_width  = 2,
-         frame_color  = color.new(color.gray, 30))
+         frame_color  = color.new(color.black, 0))
 
     // ── Header row ──
     table.cell(trendTable, 0, 0, "OVTLIER TREND TEMPLATE",
@@ -143,7 +139,7 @@ if barstate.islast and showTableInput
 
     // ── Ticker + Timeframe subheader ──
     table.cell(trendTable, 0, 1, syminfo.ticker + " | " + timeframe.period,
-         bgcolor = color.new(color.black, 60), text_color = color.gray,
+         bgcolor = color.new(#2d2d2d, 0), text_color = color.new(color.silver, 0),
          text_size = size.small, text_halign = text.align_center)
     table.merge_cells(trendTable, 0, 1, 1, 1)
 
@@ -158,68 +154,64 @@ if barstate.islast and showTableInput
     // ── Condition rows ──
     // C1
     table.cell(trendTable, 0, 3,  "C1 · Price > SMA 150",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 3,  condLabel(c1),
          bgcolor = condColor(c1), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C2
     table.cell(trendTable, 0, 4,  "C2 · Price > SMA 200",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 4,  condLabel(c2),
          bgcolor = condColor(c2), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C3
     table.cell(trendTable, 0, 5,  "C3 · SMA 150 > SMA 200",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 5,  condLabel(c3),
          bgcolor = condColor(c3), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C4
     table.cell(trendTable, 0, 6,  "C4 · SMA 200 slope ↑ (" + str.tostring(sma200SlopePeriod) + "b)",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 6,  condLabel(c4),
          bgcolor = condColor(c4), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C5
     table.cell(trendTable, 0, 7,  "C5 · SMA 50 > SMA 150 & 200",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 7,  condLabel(c5),
          bgcolor = condColor(c5), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C6
     table.cell(trendTable, 0, 8,  "C6 · Price > SMA 50",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 8,  condLabel(c6),
          bgcolor = condColor(c6), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C7
     table.cell(trendTable, 0, 9,  "C7 · Price ≥ +" + str.tostring(lowPct, "#") + "% vs 52w Low",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 9,  condLabel(c7),
          bgcolor = condColor(c7), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // C8
     table.cell(trendTable, 0, 10, "C8 · Price within " + str.tostring(highPct, "#") + "% of 52w High",
-         bgcolor = color.new(color.black, 75), text_color = TEXT_LIGHT, text_size = size.small)
+         bgcolor = ROW_COLOR, text_color = TEXT_LIGHT, text_size = size.small)
     table.cell(trendTable, 1, 10, condLabel(c8),
          bgcolor = condColor(c8), text_color = TEXT_DARK, text_size = size.small, text_halign = text.align_center)
 
     // ── Global verdict row ──
-    string verdict     = fullApproval    ? "🟢  VALID BUY SETUP"   :
-                         partialApproval ? "🟡  WATCH (" + str.tostring(condCount) + "/8)" :
-                                           "🔴  NOT READY (" + str.tostring(condCount) + "/8)"
-    color  verdictBg   = fullApproval    ? color.new(color.teal,   10) :
-                         partialApproval ? color.new(color.orange, 10) :
-                                           color.new(color.maroon, 10)
+    string verdict   = fullApproval ? "🟢  VALID BUY SETUP" : partialApproval ? "🟡  WATCH (" + str.tostring(condCount) + "/8)" : "🔴  NOT READY (" + str.tostring(condCount) + "/8)"
+    color  verdictBg = fullApproval ? color.new(color.teal, 0) : partialApproval ? color.new(color.orange, 0) : color.new(color.maroon, 0)
 
     table.cell(trendTable, 0, 11, verdict,
-         bgcolor = verdictBg, text_color = TEXT_DARK,
+         bgcolor = verdictBg, text_color = color.white,
          text_size = size.normal, text_halign = text.align_center)
     table.merge_cells(trendTable, 0, 11, 1, 11)
 
     // ── Version footer row ──
     table.cell(trendTable, 0, 12, SCRIPT_NAME + " " + SCRIPT_VERSION + " · " + SCRIPT_DATE,
-         bgcolor = color.new(color.black, 80), text_color = color.new(color.gray, 40),
+         bgcolor = color.new(#1a1a1a, 0), text_color = color.new(color.silver, 0),
          text_size = size.tiny, text_halign = text.align_center)
     table.merge_cells(trendTable, 0, 12, 1, 12)
 
