@@ -1,7 +1,7 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0
-// © Outlier-Style Market Dashboard v3
+// © Outlier-Style Market Dashboard v4
 //@version=6
-indicator("Market Dashboard v3", overlay = true, max_bars_back = 500)
+indicator("Market Dashboard v4", overlay = true, max_bars_back = 500)
 
 // ═══════════════════════════════════════════════════════════
 // INPUTS
@@ -37,6 +37,7 @@ excludeXLVInput = input.bool(true,  "Excluir Sanidad (XLV)",       group = grp5)
 excludeXLEInput = input.bool(true,  "Excluir Energía (XLE)",       group = grp5)
 
 grp6 = "Dashboard"
+minSectorsInput = input.int(3, "Mín. sectores alcistas para operar", minval = 1, maxval = 7, group = grp6)
 posInput = input.string("Top Right", "Posición tabla",
      options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"],
      group = grp6)
@@ -121,8 +122,15 @@ int activeSectors = (not excludeXLKInput and xlkBull ? 1 : 0) +
      (not excludeXLVInput and xlvBull ? 1 : 0) +
      (not excludeXLEInput and xleBull ? 1 : 0)
 
-// Semáforo general del mercado
-bool marketGreen = spyAllGood and breadthOk and activeSectors >= 3
+// Total sectores no excluidos (denominador para el contador)
+int totalActive = (not excludeXLKInput ? 1 : 0) + (not excludeXLFInput ? 1 : 0) +
+     (not excludeXLIInput ? 1 : 0) + (not excludeXLYInput ? 1 : 0) +
+     (not excludeXLCInput ? 1 : 0) + (not excludeXLVInput ? 1 : 0) +
+     (not excludeXLEInput ? 1 : 0)
+
+// Semáforo: SPY ok + amplitud ok + mínimo de sectores alcistas
+bool marketGreen  = spyAllGood and breadthOk and activeSectors >= minSectorsInput
+bool marketYellow = (spyAllGood and not breadthOk) or (spyAllGood and activeSectors < minSectorsInput)
 
 // ═══════════════════════════════════════════════════════════
 // COLORES
@@ -177,12 +185,18 @@ f_cell(col, row, txt, bg, tc, ts) =>
 
 if barstate.islast
 
-    // ── FILA 0: Título general ──────────────────────────────
+    // ── FILA 0: Señal principal — ¿Operar hoy? ────────────
+    string titleTxt = marketGreen  ? "✔ OPERAR HOY — Condiciones OK" :
+         marketYellow ? "◎ PRECAUCIÓN — Condiciones parciales" :
+         "✘ NO OPERAR — Mercado bajista"
+    color titleBg = marketGreen  ? color.new(COLOR_GREEN, 40) :
+         marketYellow ? color.new(COLOR_YELLOW, 40) :
+         color.new(COLOR_RED, 40)
     table.cell(dashTable, 0, 0,
-         text       = "◉ MARKET DASHBOARD",
-         bgcolor    = marketGreen ? color.new(COLOR_GREEN, 60) : color.new(COLOR_RED, 60),
-         text_color = COLOR_WHITE,
-         text_size  = size.normal,
+         text        = titleTxt,
+         bgcolor     = titleBg,
+         text_color  = COLOR_WHITE,
+         text_size   = size.normal,
          text_halign = text.align_center)
     table.merge_cells(dashTable, 0, 0, 3, 0)
 
@@ -226,11 +240,18 @@ if barstate.islast
     f_cell(3, 5, mmfiStr,        COLOR_BG, COLOR_WHITE, size.small)
     table.merge_cells(dashTable, 2, 5, 3, 5)
 
-    // ── FILA 6: Separador sectores ─────────────────────────
-    f_cell(0, 6, "SECTORES",     COLOR_HEADER, COLOR_WHITE, size.small)
-    f_cell(1, 6, "Tendencia",    COLOR_HEADER, COLOR_WHITE, size.small)
-    f_cell(2, 6, "RS 20d",       COLOR_HEADER, COLOR_WHITE, size.small)
-    f_cell(3, 6, "Estado",       COLOR_HEADER, COLOR_WHITE, size.small)
+    // ── FILA 6: Separador sectores + contador ─────────────
+    string sectorCountTxt = str.tostring(activeSectors) + "/" + str.tostring(totalActive) + " alcistas"
+    color  sectorCountBg  = activeSectors >= minSectorsInput ? color.new(COLOR_GREEN, 50) : color.new(COLOR_RED, 50)
+    table.cell(dashTable, 0, 6,
+         text        = "SECTORES  " + sectorCountTxt,
+         bgcolor     = sectorCountBg,
+         text_color  = COLOR_WHITE,
+         text_size   = size.small,
+         text_halign = text.align_center)
+    table.merge_cells(dashTable, 0, 6, 1, 6)
+    f_cell(2, 6, "RS 20d",    COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(3, 6, "Estado",    COLOR_HEADER, COLOR_WHITE, size.small)
 
     // ── FILAS 7-13: Sectores ───────────────────────────────
     array<SectorData> sectors = array.from(
@@ -268,7 +289,7 @@ if barstate.islast
 // FONDO DE VELA — verde/rojo suave según estado del mercado
 // ═══════════════════════════════════════════════════════════
 bgcolor(
-     marketGreen ? color.new(COLOR_GREEN, 93) :
-     spyTrend    ? color.new(COLOR_YELLOW, 93) :
+     marketGreen  ? color.new(COLOR_GREEN, 93)  :
+     marketYellow ? color.new(COLOR_YELLOW, 93) :
      color.new(COLOR_RED, 93),
      title = "Market background")
