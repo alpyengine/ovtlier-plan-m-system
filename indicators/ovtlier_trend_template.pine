@@ -7,15 +7,14 @@
 // v1 | 2026-04-28 | Initial release — 8-condition Trend Template
 //                   table checklist, SMA plots, bg color, alerts,
 //                   version control block embedded in header & table
-// v5 | 2026-04-29 | Add Step 4 manual checks as automated rows:
-//                   C9  Overextension vs ATR(14) — auto
-//                   C10 Resistance zone 2×ATR above price — semi-auto (visual)
-//                   C11 Earnings window — manual input (days to next earnings)
+// v6 | 2026-04-29 | Fix CE10095: removed duplicate atr14/resistZone variable
+//                   declarations in plots block — reuses variables from
+//                   conditions block (atr14, resistanceTop, resistanceBottom)
 // ═══════════════════════════════════════════════════════════════════
 //@version=6
 
 // ─── VERSION CONTROL ───────────────────────────────────────────────
-string SCRIPT_VERSION = "v5"
+string SCRIPT_VERSION = "v6"
 string SCRIPT_DATE    = "2026-04-29"
 string SCRIPT_NAME    = "Ovtlier Trend Template"
 
@@ -120,11 +119,9 @@ plot(showMAsInput ? sma150 : na, "SMA 150", color = color.new(color.orange, 0), 
 plot(showMAsInput ? sma200 : na, "SMA 200", color = color.new(color.red,    0), linewidth = 2)
 
 // ─── STEP 4 VISUAL — Resistance zone (2×ATR above price) ───────────
-float atr14plot        = ta.atr(14)
-float resistZoneTop    = close + 2 * atr14plot
-float resistZoneBottom = close + 1 * atr14plot
-p1 = plot(resistZoneTop,    "Resist Zone Top (2×ATR)",    color = color.new(color.orange, 70), linewidth = 1, style = plot.style_circles)
-p2 = plot(resistZoneBottom, "Resist Zone Bottom (1×ATR)", color = color.new(color.orange, 70), linewidth = 1, style = plot.style_circles)
+// Reuses atr14, resistanceTop, resistanceBottom from conditions block
+p1 = plot(resistanceTop,    "Resist Zone Top (2×ATR)",    color = color.new(color.orange, 70), linewidth = 1, style = plot.style_circles)
+p2 = plot(resistanceBottom + atr14, "Resist Zone Bottom (1×ATR)", color = color.new(color.orange, 70), linewidth = 1, style = plot.style_circles)
 fill(p1, p2, color = color.new(color.orange, 88), title = "Resistance Watch Zone")
 
 // ─── TABLE SETUP ───────────────────────────────────────────────────
