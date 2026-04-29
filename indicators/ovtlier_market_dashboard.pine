@@ -125,6 +125,15 @@ f_rsColor(val) =>
     na(val) ? COLOR_GRAY : val > 1.0 ? COLOR_GREEN : val < -1.0 ? COLOR_RED : COLOR_YELLOW
 
 // ═══════════════════════════════════════════════════════════
+// UDT — User Defined Type (debe estar en scope global)
+// ═══════════════════════════════════════════════════════════
+type SectorData
+    string name
+    bool   bull
+    float  rs
+    bool   excluded
+
+// ═══════════════════════════════════════════════════════════
 // TABLA — Dashboard principal
 // ═══════════════════════════════════════════════════════════
 var tablePos = posInput == "Top Right"    ? position.top_right    :
@@ -209,12 +218,6 @@ if barstate.islast
     f_cell(3, 6, "Estado",       COLOR_HEADER, COLOR_WHITE, size.small)
 
     // ── FILAS 7-13: Sectores ───────────────────────────────
-    type SectorData
-        string name
-        bool   bull
-        float  rs
-        bool   excluded
-
     array<SectorData> sectors = array.from(
          SectorData.new("Tecnología XLK",    xlkBull, xlkRs, false),
          SectorData.new("Financiero XLF",    xlfBull, xlfRs, false),
