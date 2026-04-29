@@ -1,7 +1,7 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0
-// © Outlier-Style Market Dashboard v1
+// © Outlier-Style Market Dashboard v2
 //@version=6
-indicator("Market Dashboard v1", overlay = true, max_bars_back = 500)
+indicator("Market Dashboard v2", overlay = true, max_bars_back = 500)
 
 // ═══════════════════════════════════════════════════════════
 // INPUTS
@@ -27,10 +27,14 @@ tkXLC  = input.symbol("AMEX:XLC",  "Comunicaciones", group = grp4)
 tkXLV  = input.symbol("AMEX:XLV",  "Sanidad",        group = grp4)
 tkXLE  = input.symbol("AMEX:XLE",  "Energía",        group = grp4)
 
-grp5 = "Dashboard"
+grp5 = "Sectores — Excluir"
+excludeXLVInput = input.bool(true,  "Excluir Sanidad (XLV)",  group = grp5)
+excludeXLEInput = input.bool(true,  "Excluir Energía (XLE)",  group = grp5)
+
+grp6 = "Dashboard"
 posInput = input.string("Top Right", "Posición tabla",
      options = ["Top Right", "Top Left", "Bottom Right", "Bottom Left"],
-     group = grp5)
+     group = grp6)
 
 // ═══════════════════════════════════════════════════════════
 // FUNCIONES HELPER
@@ -103,9 +107,11 @@ float xlcRs = f_relStrength(tkXLC, "AMEX:SPY", 20)
 float xlvRs = f_relStrength(tkXLV, "AMEX:SPY", 20)
 float xleRs = f_relStrength(tkXLE, "AMEX:SPY", 20)
 
-// Sectores activos (excluye energía y sanidad por defecto, igual que el vídeo)
+// Sectores activos (respeta los toggles de exclusión)
 int activeSectors = (xlkBull ? 1 : 0) + (xlfBull ? 1 : 0) +
-     (xliBull ? 1 : 0) + (xlyBull ? 1 : 0) + (xlcBull ? 1 : 0)
+     (xliBull ? 1 : 0) + (xlyBull ? 1 : 0) + (xlcBull ? 1 : 0) +
+     (not excludeXLVInput and xlvBull ? 1 : 0) +
+     (not excludeXLEInput and xleBull ? 1 : 0)
 
 // Semáforo general del mercado
 bool marketGreen = spyAllGood and breadthOk and activeSectors >= 3
@@ -225,8 +231,8 @@ if barstate.islast
          SectorData.new("Industrial XLI",    xliBull, xliRs, false),
          SectorData.new("Consumo Dis XLY",   xlyBull, xlyRs, false),
          SectorData.new("Comunicac. XLC",    xlcBull, xlcRs, false),
-         SectorData.new("Sanidad ✘ XLV",     xlvBull, xlvRs, true),
-         SectorData.new("Energía  ✘ XLE",    xleBull, xleRs, true))
+         SectorData.new("Sanidad XLV",     xlvBull, xlvRs, excludeXLVInput),
+         SectorData.new("Energía XLE",     xleBull, xleRs, excludeXLEInput))
 
     for i = 0 to 6
         SectorData s = array.get(sectors, i)
