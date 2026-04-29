@@ -7,11 +7,14 @@
 // v1 | 2026-04-28 | Initial release — 8-condition Trend Template
 //                   table checklist, SMA plots, bg color, alerts,
 //                   version control block embedded in header & table
+// v2 | 2026-04-28 | Fix CE10156: line continuation (\) on multiline ternaries
+//                   Fix CE10123: alertcondition message must be const string —
+//                   replaced dynamic messages with alert() + kept static alertcondition
 // ═══════════════════════════════════════════════════════════════════
 //@version=6
 
 // ─── VERSION CONTROL ───────────────────────────────────────────────
-string SCRIPT_VERSION = "v1"
+string SCRIPT_VERSION = "v2"
 string SCRIPT_DATE    = "2026-04-28"
 string SCRIPT_NAME    = "Ovtlier Trend Template"
 
@@ -80,8 +83,8 @@ bool partialApproval = condCount >= 6 and condCount < 8
 
 // ─── BACKGROUND COLOR ──────────────────────────────────────────────
 // Subtle background to signal overall regime on current bar
-color bgColor = fullApproval   ? color.new(color.teal,   88) :
-                partialApproval ? color.new(color.yellow, 90) :
+color bgColor = fullApproval    ? color.new(color.teal,   88) : \
+               partialApproval  ? color.new(color.yellow, 90) : \
                                   color.new(color.red,    93)
 
 bgcolor(showBgInput ? bgColor : na, title = "Trend Template Background")
@@ -94,10 +97,10 @@ plot(showMAsInput ? sma200 : na, "SMA 200", color = color.new(color.red,    0), 
 // ─── TABLE SETUP ───────────────────────────────────────────────────
 //@function Returns the table.position constant based on a string input
 tablePos(string pos) =>
-    pos == "Top Right"    ? position.top_right    :
-     pos == "Top Left"    ? position.top_left     :
-     pos == "Bottom Right"? position.bottom_right :
-                            position.bottom_left
+    pos == "Top Right"     ? position.top_right    : \
+    pos == "Top Left"      ? position.top_left     : \
+    pos == "Bottom Right"  ? position.bottom_right : \
+                             position.bottom_left
 
 // Color helpers
 color PASS_COLOR = color.new(color.teal,  10)
@@ -221,10 +224,20 @@ if barstate.islast and showTableInput
     table.merge_cells(trendTable, 0, 12, 1, 12)
 
 // ─── ALERT CONDITIONS ──────────────────────────────────────────────
-string alertMsg = syminfo.ticker + " | Ovtlier Trend Template | " +
-                  str.tostring(condCount) + "/8 conditions met | Price: " +
-                  str.tostring(close, "#.##")
+// alertcondition() requires const string — use alert() instead to support dynamic messages
+string alertBase = syminfo.ticker + " | Ovtlier Trend Template " + SCRIPT_VERSION + " | " +
+                   str.tostring(condCount) + "/8 | Price: " + str.tostring(close, "#.##")
 
-alertcondition(fullApproval,    title = "✅ Full Approval (8/8)",    message = "🟢 VALID BUY SETUP | " + alertMsg)
-alertcondition(partialApproval, title = "🟡 Watch Setup (6-7/8)",   message = "🟡 WATCH | " + alertMsg)
-alertcondition(ta.crossover(close, sma200), title = "Price crossed above SMA 200", message = "📈 Price > SMA200 | " + alertMsg)
+if fullApproval
+    alert("🟢 VALID BUY SETUP | " + alertBase, alert.freq_once_per_bar_close)
+
+if partialApproval
+    alert("🟡 WATCH | " + alertBase, alert.freq_once_per_bar_close)
+
+if ta.crossover(close, sma200)
+    alert("📈 Price crossed above SMA 200 | " + alertBase, alert.freq_once_per_bar_close)
+
+// Static alertcondition triggers (no dynamic string — TradingView alert panel compatible)
+alertcondition(fullApproval,             title = "✅ Full Approval (8/8)",          message = "Ovtlier Trend Template: VALID BUY SETUP (8/8)")
+alertcondition(partialApproval,          title = "🟡 Watch Setup (6-7/8)",          message = "Ovtlier Trend Template: WATCH setup developing")
+alertcondition(ta.crossover(close, sma200), title = "Price crossed above SMA 200",  message = "Ovtlier Trend Template: Price > SMA 200 crossover")
