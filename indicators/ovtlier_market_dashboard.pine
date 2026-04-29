@@ -1,13 +1,16 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0
-// © Outlier-Style Market Dashboard v5
+// © Outlier-Style Market Dashboard v5.1
 // Cambios respecto a v4:
 //   · Añadido sector Software (IGV) entre Tecnología y Financiero
 //   · Añadidos sectores Agricultura (DBA), Commodities (DBC) y Metales Preciosos (GLD) al final
 //   · XLE pasa a ser sector de pleno derecho (sin exclusión forzada por defecto)
-//   · Tabla ampliada de 14 a 18 filas para acomodar los 11 sectores
 //   · totalActive y activeSectors actualizados para los 11 sectores
+// Cambios respecto a v5:
+//   · Tabla ampliada a 19 filas: fila 6 exclusiva para contador, fila 7 para headers de columna
+//   · Header "Tendencia" ahora visible y alineado con su columna
+//   · Estado del sector diferencia tres casos: ✔ OPERAR / ◎ ESPERAR / ✘ BAJISTA
 //@version=6
-indicator("Market Dashboard v5", overlay = true, max_bars_back = 500)
+indicator("Market Dashboard v5.1", overlay = true, max_bars_back = 500)
 
 // ═══════════════════════════════════════════════════════════
 // INPUTS
@@ -189,11 +192,12 @@ type SectorData
 
 // ═══════════════════════════════════════════════════════════
 // TABLA — Dashboard principal
-// 4 columnas × 18 filas:
-//   Fila 0:    Título / señal principal
-//   Filas 1-5: SPY (headers + tendencia + momentum + volumen + amplitud)
-//   Fila 6:    Header sectores + contador
-//   Filas 7-17: 11 sectores
+// 4 columnas × 19 filas:
+//   Fila 0:     Título / señal principal
+//   Filas 1-5:  SPY (headers + tendencia + momentum + volumen + amplitud)
+//   Fila 6:     Contador de sectores (fusionada en 4 columnas)
+//   Fila 7:     Headers de columna de sectores (Sector | Tendencia | RS 20d | Estado)
+//   Filas 8-18: 11 sectores
 // ═══════════════════════════════════════════════════════════
 var string tablePos = posInput == "Top Right"    ? position.top_right    :
      posInput == "Top Left"     ? position.top_left     :
@@ -201,7 +205,7 @@ var string tablePos = posInput == "Top Right"    ? position.top_right    :
      position.bottom_left
 
 var table dashTable = table.new(
-     tablePos, 4, 18,
+     tablePos, 4, 19,
      bgcolor      = COLOR_BG,
      border_color = color.new(COLOR_GRAY, 60),
      border_width = 1,
@@ -272,7 +276,7 @@ if barstate.islast
     f_cell(3, 5, mmfiStr,       COLOR_BG, COLOR_WHITE, size.small)
     table.merge_cells(dashTable, 2, 5, 3, 5)
 
-    // ── FILA 6: Header sectores + contador ─────────────────
+    // ── FILA 6: Contador de sectores (fusionada) ───────────
     string sectorCountTxt = str.tostring(activeSectors) + "/" + str.tostring(totalActive) + " alcistas"
     color  sectorCountBg  = activeSectors >= minSectorsInput ?
          color.new(COLOR_GREEN, 50) : color.new(COLOR_RED, 50)
@@ -282,11 +286,15 @@ if barstate.islast
          text_color  = COLOR_WHITE,
          text_size   = size.small,
          text_halign = text.align_center)
-    table.merge_cells(dashTable, 0, 6, 1, 6)
-    f_cell(2, 6, "RS 20d",  COLOR_HEADER, COLOR_WHITE, size.small)
-    f_cell(3, 6, "Estado",  COLOR_HEADER, COLOR_WHITE, size.small)
+    table.merge_cells(dashTable, 0, 6, 3, 6)
 
-    // ── FILAS 7-17: Los 11 sectores ────────────────────────
+    // ── FILA 7: Headers de columna de sectores ─────────────
+    f_cell(0, 7, "Sector",    COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(1, 7, "Tendencia", COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(2, 7, "RS 20d",    COLOR_HEADER, COLOR_WHITE, size.small)
+    f_cell(3, 7, "Estado",    COLOR_HEADER, COLOR_WHITE, size.small)
+
+    // ── FILAS 8-18: Los 11 sectores ────────────────────────
     array<SectorData> sectors = array.from(
          SectorData.new("Tecnología  XLK", xlkBull, xlkRs, excludeXLKInput),
          SectorData.new("Software    IGV", igvBull, igvRs, excludeIGVInput),
@@ -302,25 +310,38 @@ if barstate.islast
 
     for i = 0 to 10
         SectorData s   = array.get(sectors, i)
-        int        row = i + 7
+        int        row = i + 8   // sectores empiezan en fila 8
         color rowBg  = s.excluded ? color.new(COLOR_GRAY, 75) : COLOR_BG
         color nameTc = s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE
 
+        // Columna 0 — nombre del sector
         f_cell(0, row, s.name, rowBg, nameTc, size.small)
+
+        // Columna 1 — tendencia alcista / bajista
         f_cell(1, row,
              s.bull ? "▲ Alcista" : "▼ Bajista",
              s.excluded ? rowBg : f_statusColor(s.bull),
              s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE,
              size.small)
+
+        // Columna 2 — fuerza relativa vs SPY 20d
         f_cell(2, row,
              not na(s.rs) ? (s.rs > 0 ? "+" : "") + str.tostring(s.rs, "#.##") + "%" : "—",
              rowBg, f_rsColor(s.rs), size.small)
-        f_cell(3, row,
-             s.excluded ? "EXCLUIDO" : (s.bull and s.rs > 0 ? "✔ OPERAR" : "◎ ESPERAR"),
-             s.excluded ? rowBg :
-             (s.bull and s.rs > 0 ? color.new(COLOR_GREEN, 50) : color.new(COLOR_YELLOW, 60)),
-             s.excluded ? color.new(COLOR_WHITE, 50) : COLOR_WHITE,
-             size.tiny)
+
+        // Columna 3 — estado con tres niveles diferenciados:
+        //   ✔ OPERAR  → alcista Y RS positiva
+        //   ◎ ESPERAR → alcista pero RS negativa
+        //   ✘ BAJISTA → tendencia bajista
+        string statusTxt  = s.excluded  ? "EXCLUIDO" :
+             not s.bull               ? "✘ BAJISTA" :
+             s.rs > 0                 ? "✔ OPERAR"  : "◎ ESPERAR"
+        color  statusBg   = s.excluded  ? rowBg :
+             not s.bull               ? color.new(COLOR_RED, 50)    :
+             s.rs > 0                 ? color.new(COLOR_GREEN, 50)  :
+             color.new(COLOR_YELLOW, 60)
+        color  statusTc   = s.excluded  ? color.new(COLOR_WHITE, 50) : COLOR_WHITE
+        f_cell(3, row, statusTxt, statusBg, statusTc, size.tiny)
 
 // ═══════════════════════════════════════════════════════════
 // FONDO DE VELA — tres estados según régimen de mercado
