@@ -1,7 +1,7 @@
 // This source code is subject to the terms of the Mozilla Public License 2.0
-// © Outlier-Style Market Dashboard v2
+// © Outlier-Style Market Dashboard v3
 //@version=6
-indicator("Market Dashboard v2", overlay = true, max_bars_back = 500)
+indicator("Market Dashboard v3", overlay = true, max_bars_back = 500)
 
 // ═══════════════════════════════════════════════════════════
 // INPUTS
@@ -28,8 +28,13 @@ tkXLV  = input.symbol("AMEX:XLV",  "Sanidad",        group = grp4)
 tkXLE  = input.symbol("AMEX:XLE",  "Energía",        group = grp4)
 
 grp5 = "Sectores — Excluir"
-excludeXLVInput = input.bool(true,  "Excluir Sanidad (XLV)",  group = grp5)
-excludeXLEInput = input.bool(true,  "Excluir Energía (XLE)",  group = grp5)
+excludeXLKInput = input.bool(false, "Excluir Tecnología (XLK)",    group = grp5)
+excludeXLFInput = input.bool(false, "Excluir Financiero (XLF)",    group = grp5)
+excludeXLIInput = input.bool(false, "Excluir Industrial (XLI)",    group = grp5)
+excludeXLYInput = input.bool(false, "Excluir Consumo Discr. (XLY)", group = grp5)
+excludeXLCInput = input.bool(false, "Excluir Comunicaciones (XLC)", group = grp5)
+excludeXLVInput = input.bool(true,  "Excluir Sanidad (XLV)",       group = grp5)
+excludeXLEInput = input.bool(true,  "Excluir Energía (XLE)",       group = grp5)
 
 grp6 = "Dashboard"
 posInput = input.string("Top Right", "Posición tabla",
@@ -107,9 +112,12 @@ float xlcRs = f_relStrength(tkXLC, "AMEX:SPY", 20)
 float xlvRs = f_relStrength(tkXLV, "AMEX:SPY", 20)
 float xleRs = f_relStrength(tkXLE, "AMEX:SPY", 20)
 
-// Sectores activos (respeta los toggles de exclusión)
-int activeSectors = (xlkBull ? 1 : 0) + (xlfBull ? 1 : 0) +
-     (xliBull ? 1 : 0) + (xlyBull ? 1 : 0) + (xlcBull ? 1 : 0) +
+// Sectores activos (respeta todos los toggles de exclusión)
+int activeSectors = (not excludeXLKInput and xlkBull ? 1 : 0) +
+     (not excludeXLFInput and xlfBull ? 1 : 0) +
+     (not excludeXLIInput and xliBull ? 1 : 0) +
+     (not excludeXLYInput and xlyBull ? 1 : 0) +
+     (not excludeXLCInput and xlcBull ? 1 : 0) +
      (not excludeXLVInput and xlvBull ? 1 : 0) +
      (not excludeXLEInput and xleBull ? 1 : 0)
 
@@ -226,13 +234,13 @@ if barstate.islast
 
     // ── FILAS 7-13: Sectores ───────────────────────────────
     array<SectorData> sectors = array.from(
-         SectorData.new("Tecnología XLK",    xlkBull, xlkRs, false),
-         SectorData.new("Financiero XLF",    xlfBull, xlfRs, false),
-         SectorData.new("Industrial XLI",    xliBull, xliRs, false),
-         SectorData.new("Consumo Dis XLY",   xlyBull, xlyRs, false),
-         SectorData.new("Comunicac. XLC",    xlcBull, xlcRs, false),
-         SectorData.new("Sanidad XLV",     xlvBull, xlvRs, excludeXLVInput),
-         SectorData.new("Energía XLE",     xleBull, xleRs, excludeXLEInput))
+         SectorData.new("Tecnología XLK",    xlkBull, xlkRs, excludeXLKInput),
+         SectorData.new("Financiero XLF",    xlfBull, xlfRs, excludeXLFInput),
+         SectorData.new("Industrial XLI",    xliBull, xliRs, excludeXLIInput),
+         SectorData.new("Consumo Dis XLY",   xlyBull, xlyRs, excludeXLYInput),
+         SectorData.new("Comunicac. XLC",    xlcBull, xlcRs, excludeXLCInput),
+         SectorData.new("Sanidad XLV",       xlvBull, xlvRs, excludeXLVInput),
+         SectorData.new("Energía XLE",       xleBull, xleRs, excludeXLEInput))
 
     for i = 0 to 6
         SectorData s = array.get(sectors, i)
