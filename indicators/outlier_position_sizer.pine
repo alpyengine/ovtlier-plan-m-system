@@ -1,125 +1,217 @@
 // ═══════════════════════════════════════════════════════════════
-// © Ovtlier Quant | Position Sizer v1
+// © Ovtlier Quant | Position Sizer v2
 // Calcula el tamaño de posición usando la fórmula ATR de Uhl
 // Metodología: Outlier University — Christopher Uhl
+// v2: Tabla desplazable, estética mejorada, filas de datos corregidas
 // ═══════════════════════════════════════════════════════════════
 //@version=6
-indicator("Outlier Position Sizer v1", overlay=true)
+indicator("Outlier Position Sizer v2", overlay=true)
 
-// ─── INPUTS ───────────────────────────────────────────────────
-float balanceInput   = input.float(25000, "Balance de cuenta ($)",    group="💼 Cuenta",   minval=100,  step=1000)
-float riskPctInput   = input.float(1.0,   "Riesgo por operación (%)", group="💼 Cuenta",   minval=0.1,  maxval=5.0, step=0.1)
-int   atrLenInput    = input.int(14,      "Longitud ATR",             group="📊 ATR",       minval=1)
-float atrMultInput   = input.float(2.0,   "Multiplicador ATR (stop)", group="📊 ATR",       minval=0.5,  step=0.5)
-bool  isOptionsInput = input.bool(false,  "¿Es una opción?",          group="📈 Opciones")
-float deltaInput     = input.float(0.70,  "Delta de la opción",       group="📈 Opciones",  minval=0.05, maxval=1.0, step=0.05)
+// ─── INPUTS: CUENTA ───────────────────────────────────────────
+float balanceInput  = input.float(25000, "Balance de cuenta ($)",    group="💼 Cuenta",  minval=100,  step=1000)
+float riskPctInput  = input.float(1.0,   "Riesgo por operación (%)", group="💼 Cuenta",  minval=0.1,  maxval=5.0, step=0.1)
+
+// ─── INPUTS: ATR ──────────────────────────────────────────────
+int   atrLenInput   = input.int(14,      "Longitud ATR",             group="📊 ATR",     minval=1)
+float atrMultInput  = input.float(2.0,   "Multiplicador ATR (stop)", group="📊 ATR",     minval=0.5,  step=0.5)
+
+// ─── INPUTS: OPCIONES ─────────────────────────────────────────
+bool  isOptions     = input.bool(false,  "¿Es una opción?",          group="📈 Opciones")
+float deltaInput    = input.float(0.70,  "Delta de la opción",       group="📈 Opciones", minval=0.05, maxval=1.0, step=0.05)
+
+// ─── INPUTS: POSICIÓN DE LA TABLA ─────────────────────────────
+string posInput     = input.string("Top Right", "Posición en el gráfico",
+     options=["Top Left","Top Center","Top Right",
+              "Middle Left","Middle Center","Middle Right",
+              "Bottom Left","Bottom Center","Bottom Right"],
+     group="🗺 Tabla")
+
+// ─── CONVERTIR POSICIÓN ───────────────────────────────────────
+tablePosition(string pos) =>
+    switch pos
+        "Top Left"       => position.top_left
+        "Top Center"     => position.top_center
+        "Top Right"      => position.top_right
+        "Middle Left"    => position.middle_left
+        "Middle Center"  => position.middle_center
+        "Middle Right"   => position.middle_right
+        "Bottom Left"    => position.bottom_left
+        "Bottom Center"  => position.bottom_center
+        => position.bottom_right
 
 // ─── FUNCIONES ────────────────────────────────────────────────
 
-//@function Calcula el riesgo en dólares basado en el balance y el % de riesgo
-//@param bal   (float) Balance total de la cuenta
-//@param pct   (float) Porcentaje de riesgo por operación
-//@returns     Dólares máximos a arriesgar en esta operación
+//@function Calcula el riesgo en dólares basado en balance y % de riesgo
+//@param bal (float) Balance total de la cuenta
+//@param pct (float) Porcentaje de riesgo por operación
+//@returns   Dólares máximos a arriesgar
 calcDollarRisk(float bal, float pct) =>
     bal * (pct / 100)
 
 //@function Calcula la distancia del stop loss usando ATR
-//@param atrValue (float) Valor del ATR actual
-//@param mult     (float) Multiplicador aplicado al ATR
-//@returns        Distancia en dólares desde entrada hasta stop
-calcStopDistance(float atrValue, float mult) =>
-    atrValue * mult
+//@param atrVal (float) Valor ATR actual
+//@param mult   (float) Multiplicador del ATR
+//@returns      Distancia en $ desde entrada hasta stop
+calcStopDist(float atrVal, float mult) =>
+    atrVal * mult
 
-//@function Calcula el número de acciones a comprar
-//@param dollarRisk (float) Riesgo máximo en dólares
-//@param stopDist   (float) Distancia del stop loss en dólares
+//@function Número de acciones a comprar
+//@param dollarRisk (float) Riesgo máximo en $
+//@param stopDist   (float) Distancia del stop en $
 //@returns          Número entero de acciones
 calcShares(float dollarRisk, float stopDist) =>
     stopDist > 0 ? math.floor(dollarRisk / stopDist) : 0
 
-// ─── CÁLCULOS PRINCIPALES ─────────────────────────────────────
-float atrValue    = ta.atr(atrLenInput)                        // ATR del símbolo actual
-float dollarRisk  = calcDollarRisk(balanceInput, riskPctInput) // Riesgo en $ = Balance × Riesgo%
-float stopDist    = calcStopDistance(atrValue, atrMultInput)   // Stop en $ = ATR × Multiplicador
-float stopPrice   = close - stopDist                           // Precio de stop dinámico
-int   rawShares   = calcShares(dollarRisk, stopDist)           // Acciones = Riesgo$ / Stop$
-int   contracts   = isOptionsInput and deltaInput > 0 ?
-     math.floor(rawShares / 100 / deltaInput) : 0             // Contratos = Acciones / 100 / Delta
-float capitalUsed = isOptionsInput ?
-     contracts * 100 * close : rawShares * close              // Capital total comprometido
-float capitalPct  = balanceInput > 0 ?
-     (capitalUsed / balanceInput) * 100 : 0                   // % del balance usado
+// ─── CÁLCULOS ─────────────────────────────────────────────────
+// Importante: todos los cálculos fuera del bloque if barstate.islast
+float atrValue   = ta.atr(atrLenInput)
+float dollarRisk = calcDollarRisk(balanceInput, riskPctInput)
+float stopDist   = calcStopDist(atrValue, atrMultInput)
+float stopPrice  = close - stopDist
+int   rawShares  = calcShares(dollarRisk, stopDist)
+int   contracts  = isOptions and deltaInput > 0 ?
+     math.floor(rawShares / 100 / deltaInput) : 0
+float capital    = isOptions ? contracts * 100 * close : rawShares * close
+float capPct     = balanceInput > 0 ? (capital / balanceInput) * 100 : 0
 
-// ─── TABLA DE RESULTADOS ──────────────────────────────────────
-var table psTable = table.new(
-     position.top_right, 2, 7,
-     border_width = 1, border_color = color.new(color.gray, 70),
-     frame_width  = 1, frame_color  = color.new(color.gray, 50))
+// ─── STRINGS PRE-CALCULADOS (fuera del if) ────────────────────
+// Esto corrige el bug de las filas vacías en v1
+string sDollarRisk = "$" + str.tostring(math.round(dollarRisk, 2))
+string sAtr        = str.tostring(math.round(atrValue, 3))
+string sStopPrice  = "$" + str.tostring(math.round(stopPrice, 2))
+string sUnits      = isOptions ?
+     str.tostring(contracts) + " contratos" :
+     str.tostring(rawShares) + " acciones"
+string sCapital    = "$" + str.tostring(math.round(capital)) +
+     "  (" + str.tostring(math.round(capPct, 1)) + "%)"
+string sAlert      = riskPctInput > 2.0 ? "⚠  Riesgo > 2%  —  Reducir" :
+     capPct > 30                        ? "⚠  Alta concentración"       :
+     rawShares == 0                     ? "⚠  Stop = 0, revisar ATR"    :
+     "✓  Parámetros OK"
 
-color headerBg  = color.new(color.navy, 10)
-color rowBg     = color.new(color.white, 5)
-color warnColor = capitalPct > 30 ? color.red : color.teal
+// ─── COLORES ──────────────────────────────────────────────────
+color cBg       = color.new(#0d1117, 5)     // fondo oscuro igual que indicadores
+color cHeader   = color.new(#1a2332, 0)     // cabecera azul oscuro
+color cRow      = color.new(#0d1117, 0)     // filas oscuras
+color cRowAlt   = color.new(#111927, 0)     // fila alternada
+color cLabel    = color.new(#8899aa, 0)     // texto etiquetas gris
+color cValue    = color.new(#e0e8f0, 0)     // texto valores blanco suave
+color cTitle    = color.new(#ffffff, 0)     // título blanco
+color cTicker   = color.new(#f0c040, 0)     // ticker amarillo dorado
+color cTeal     = color.new(#00c9a7, 0)     // teal para acciones/contratos
+color cRed      = color.new(#ff4d6d, 0)     // rojo stop loss
+color cWarnOk   = color.new(#00c9a7, 0)
+color cWarnBad  = color.new(#ff4d6d, 0)
+color cCapValue = capPct > 30 ? cWarnBad : cTeal
+color cAlertClr = (riskPctInput > 2.0 or capPct > 30 or rawShares == 0) ?
+     cWarnBad : cWarnOk
+
+// ─── TABLA ────────────────────────────────────────────────────
+var table t = table.new(
+     tablePosition(posInput), 2, 8,
+     bgcolor      = cBg,
+     frame_color  = color.new(#2a3f5a, 0),
+     frame_width  = 1,
+     border_color = color.new(#1e2e42, 0),
+     border_width = 1)
 
 if barstate.islast
-    // ── Cabecera ──────────────────────────────────────────────
-    table.cell(psTable, 0, 0, "OUTLIER POSITION SIZER",
-         text_color   = color.white,
-         bgcolor      = headerBg,
-         text_size    = size.small,
-         text_halign  = text.align_left)
-    table.cell(psTable, 1, 0, syminfo.ticker,
-         text_color   = color.yellow,
-         bgcolor      = headerBg,
-         text_size    = size.small,
-         text_halign  = text.align_right)
+    // Actualizar posición dinámicamente si el usuario la cambia
+    table.set_position(t, tablePosition(posInput))
 
-    // ── Fila 1: Riesgo en dólares ─────────────────────────────
-    table.cell(psTable, 0, 1, "💰 Riesgo ($)",
-         text_color = color.gray, bgcolor = rowBg, text_size = size.tiny)
-    table.cell(psTable, 1, 1, "$" + str.tostring(dollarRisk, "#.##"),
-         text_color = color.white, bgcolor = rowBg, text_size = size.tiny)
+    // ── Fila 0: Cabecera ──────────────────────────────────────
+    table.cell(t, 0, 0, "OUTLIER  POSITION  SIZER",
+         bgcolor     = cHeader,
+         text_color  = cTitle,
+         text_size   = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 0, syminfo.ticker,
+         bgcolor     = cHeader,
+         text_color  = cTicker,
+         text_size   = size.small,
+         text_halign = text.align_right)
 
-    // ── Fila 2: ATR actual ────────────────────────────────────
-    table.cell(psTable, 0, 2, "📊 ATR(" + str.tostring(atrLenInput) + ")",
-         text_color = color.gray, bgcolor = rowBg, text_size = size.tiny)
-    table.cell(psTable, 1, 2, str.tostring(atrValue, "#.##"),
-         text_color = color.white, bgcolor = rowBg, text_size = size.tiny)
+    // ── Fila 1: Separador visual ──────────────────────────────
+    table.cell(t, 0, 1, "─── Parámetros de riesgo ───────",
+         bgcolor     = color.new(#0a0f18, 0),
+         text_color  = color.new(#2a4060, 0),
+         text_size   = size.tiny,
+         text_halign = text.align_left)
+    table.cell(t, 1, 1, "",
+         bgcolor     = color.new(#0a0f18, 0))
 
-    // ── Fila 3: Stop Loss ─────────────────────────────────────
-    table.cell(psTable, 0, 3, "🛑 Stop Loss",
-         text_color = color.gray, bgcolor = rowBg, text_size = size.tiny)
-    table.cell(psTable, 1, 3, "$" + str.tostring(stopPrice, "#.##"),
-         text_color = color.red, bgcolor = rowBg, text_size = size.tiny)
+    // ── Fila 2: Riesgo en dólares ─────────────────────────────
+    table.cell(t, 0, 2, "  💰  Riesgo ($)",
+         bgcolor    = cRow,
+         text_color = cLabel,
+         text_size  = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 2, sDollarRisk + "  ",
+         bgcolor    = cRow,
+         text_color = cValue,
+         text_size  = size.small,
+         text_halign = text.align_right)
 
-    // ── Fila 4: Acciones o contratos ──────────────────────────
-    string unitsLabel = isOptionsInput ? "📑 Contratos" : "📦 Acciones"
-    int    unitsValue = isOptionsInput ? contracts : rawShares
-    table.cell(psTable, 0, 4, unitsLabel,
-         text_color = color.gray, bgcolor = rowBg, text_size = size.tiny)
-    table.cell(psTable, 1, 4, str.tostring(unitsValue),
-         text_color = color.teal, bgcolor = rowBg, text_size = size.small)
+    // ── Fila 3: ATR ───────────────────────────────────────────
+    table.cell(t, 0, 3, "  📊  ATR(" + str.tostring(atrLenInput) + ")",
+         bgcolor    = cRowAlt,
+         text_color = cLabel,
+         text_size  = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 3, sAtr + "  ",
+         bgcolor    = cRowAlt,
+         text_color = cValue,
+         text_size  = size.small,
+         text_halign = text.align_right)
 
-    // ── Fila 5: Capital comprometido ──────────────────────────
-    table.cell(psTable, 0, 5, "💼 Capital usado",
-         text_color = color.gray, bgcolor = rowBg, text_size = size.tiny)
-    table.cell(psTable, 1, 5,
-         "$" + str.tostring(math.round(capitalUsed)) +
-         " (" + str.tostring(capitalPct, "#.#") + "%)",
-         text_color = warnColor, bgcolor = rowBg, text_size = size.tiny)
+    // ── Fila 4: Stop Loss ─────────────────────────────────────
+    table.cell(t, 0, 4, "  🛑  Stop Loss",
+         bgcolor    = cRow,
+         text_color = cLabel,
+         text_size  = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 4, sStopPrice + "  ",
+         bgcolor    = cRow,
+         text_color = cRed,
+         text_size  = size.small,
+         text_halign = text.align_right)
 
-    // ── Fila 6: Alerta de riesgo ──────────────────────────────
-    string alertMsg = riskPctInput > 2.0 ? "⚠ Riesgo > 2% — Reducir" :
-         capitalPct > 30                 ? "⚠ Alta concentración"     : "✓ Parámetros OK"
-    color  alertCol = riskPctInput > 2.0 or capitalPct > 30 ?
-         color.red : color.teal
-    table.cell(psTable, 0, 6, alertMsg,
-         text_color = alertCol, bgcolor = rowBg,
-         text_size  = size.tiny, text_halign = text.align_left)
-    table.cell(psTable, 1, 6, "", bgcolor = rowBg)
+    // ── Fila 5: Acciones / Contratos ──────────────────────────
+    table.cell(t, 0, 5, isOptions ? "  📑  Contratos" : "  📦  Acciones",
+         bgcolor    = cRowAlt,
+         text_color = cLabel,
+         text_size  = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 5, sUnits + "  ",
+         bgcolor    = cRowAlt,
+         text_color = cTeal,
+         text_size  = size.normal,
+         text_halign = text.align_right)
+
+    // ── Fila 6: Capital comprometido ──────────────────────────
+    table.cell(t, 0, 6, "  💼  Capital usado",
+         bgcolor    = cRow,
+         text_color = cLabel,
+         text_size  = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 6, sCapital + "  ",
+         bgcolor    = cRow,
+         text_color = cCapValue,
+         text_size  = size.small,
+         text_halign = text.align_right)
+
+    // ── Fila 7: Estado / Alerta ───────────────────────────────
+    table.cell(t, 0, 7, "  " + sAlert,
+         bgcolor     = color.new(#0a0f18, 0),
+         text_color  = cAlertClr,
+         text_size   = size.small,
+         text_halign = text.align_left)
+    table.cell(t, 1, 7, "",
+         bgcolor     = color.new(#0a0f18, 0))
 
 // ─── STOP LOSS DINÁMICO EN EL GRÁFICO ─────────────────────────
 // Línea roja punteada que muestra el nivel de salida en tiempo real
 plot(stopPrice, "Stop Loss ATR",
-     color     = color.new(color.red, 30),
+     color     = color.new(#ff4d6d, 40),
      style     = plot.style_linebr,
      linewidth = 1)
