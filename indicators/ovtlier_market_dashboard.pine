@@ -216,8 +216,8 @@ color CLR_AMBER_BG  = #fef3c7          // badge WARN — ambar claro
 color CLR_AMBER_TC  = #b45309          // texto ambar oscuro
 
 // Sector excluido
-color CLR_EXCL_BG   = #f4f5f8
-color CLR_EXCL_TC   = color.new(#4b5563, 50)
+color CLR_EXCL_BG   = #dde0e8          // gris medio — claramente distinto de SURFACE (#fff) y SURFACE2 (#f4f5f8)
+color CLR_EXCL_TC   = #8c92a0          // gris apagado con contraste legible sobre CLR_EXCL_BG
 
 // Semaforo global (fila 0) — colores con algo mas de intensidad para destacar
 color CLR_SEM_GREEN_BG  = color.new(#dcfce7, 10)
