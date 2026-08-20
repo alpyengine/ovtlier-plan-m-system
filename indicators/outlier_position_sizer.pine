@@ -1,11 +1,11 @@
 // ═══════════════════════════════════════════════════════════════
-// © Ovtlier Quant | Position Sizer v4
+// © Ovtlier Quant | Position Sizer v5
 // Calcula el tamaño de posición usando la fórmula ATR de Uhl
 // Metodología: Outlier University — Christopher Uhl
-// v4: Fila separadora legible, contraste máximo en etiquetas
+// v5: Paleta clara (Market Dashboard / Plan A) + texto configurable
 // ═══════════════════════════════════════════════════════════════
 //@version=6
-indicator("Outlier Position Sizer v4", overlay=true)
+indicator("Outlier Position Sizer v5", overlay=true)
 
 // ─── INPUTS: CUENTA ───────────────────────────────────────────
 float balanceInput  = input.float(25000, "Balance de cuenta ($)",    group="💼 Cuenta",  minval=100,  step=1000)
@@ -19,14 +19,17 @@ float atrMultInput  = input.float(2.0,   "Multiplicador ATR (stop)", group="📊
 bool  isOptions     = input.bool(false,  "¿Es una opción?",          group="📈 Opciones")
 float deltaInput    = input.float(0.70,  "Delta de la opción",       group="📈 Opciones", minval=0.05, maxval=1.0, step=0.05)
 
-// ─── INPUTS: POSICIÓN DE LA TABLA ─────────────────────────────
+// ─── INPUTS: TABLA ────────────────────────────────────────────
 string posInput     = input.string("Top Right", "Posición en el gráfico",
-     options=["Top Left","Top Center","Top Right",
-              "Middle Left","Middle Center","Middle Right",
-              "Bottom Left","Bottom Center","Bottom Right"],
-     group="🗺 Tabla")
+     options = ["Top Left","Top Center","Top Right",
+                "Middle Left","Middle Center","Middle Right",
+                "Bottom Left","Bottom Center","Bottom Right"],
+     group   = "🗺 Tabla")
+string tamPanelInput = input.string("small", "Tamaño de texto",
+     options = ["tiny", "small", "normal", "large"],
+     group   = "🗺 Tabla")
 
-// ─── CONVERTIR POSICIÓN ───────────────────────────────────────
+// ─── HELPERS: POSICIÓN Y TAMAÑO ───────────────────────────────
 tablePosition(string pos) =>
     switch pos
         "Top Left"       => position.top_left
@@ -39,7 +42,14 @@ tablePosition(string pos) =>
         "Bottom Center"  => position.bottom_center
         => position.bottom_right
 
-// ─── FUNCIONES ────────────────────────────────────────────────
+resolveSize(string s) =>
+    switch s
+        "tiny"   => size.tiny
+        "normal" => size.normal
+        "large"  => size.large
+        => size.small
+
+// ─── FUNCIONES DE CÁLCULO ─────────────────────────────────────
 
 //@function Calcula el riesgo en dólares basado en balance y % de riesgo
 //@param bal (float) Balance total de la cuenta
@@ -63,6 +73,7 @@ calcShares(float dollarRisk, float stopDist) =>
     stopDist > 0 ? math.floor(dollarRisk / stopDist) : 0
 
 // ─── CÁLCULOS ─────────────────────────────────────────────────
+// Sin modificar — misma lógica que v4
 float atrValue   = ta.atr(atrLenInput)
 float dollarRisk = calcDollarRisk(balanceInput, riskPctInput)
 float stopDist   = calcStopDist(atrValue, atrMultInput)
@@ -87,34 +98,40 @@ string sAlert      = riskPctInput > 2.0 ? "⚠   Riesgo > 2%  —  Reducir" :
      rawShares == 0                     ? "⚠   Stop = 0, revisar ATR"    :
      "✓   Parámetros OK"
 
-// ─── COLORES ──────────────────────────────────────────────────
-color cBg       = color.new(#080c12, 0)    // fondo muy oscuro
-color cHeader   = color.new(#0e1f35, 0)    // cabecera azul oscuro
-color cSep      = color.new(#102040, 0)    // separador azul medio
-color cRow      = color.new(#080c12, 0)    // fila oscura
-color cRowAlt   = color.new(#0d1520, 0)    // fila alternada
-color cLabel    = color.new(#ddeeff, 0)    // etiquetas blanco azulado muy claro
-color cValue    = color.new(#ffffff, 0)    // valores blanco puro
-color cTitle    = color.new(#ffffff, 0)    // título blanco puro
-color cTicker   = color.new(#ffd000, 0)    // ticker amarillo brillante
-color cSepText  = color.new(#7fb8e8, 0)    // texto separador azul claro legible
-color cTeal     = color.new(#00ffcc, 0)    // teal brillante acciones/contratos
-color cRed      = color.new(#ff3355, 0)    // rojo vivo stop loss
-color cWarnOk   = color.new(#00ffcc, 0)
-color cWarnBad  = color.new(#ff3355, 0)
+// ─── PALETA CLARA (Market Dashboard / Plan A) ─────────────────
+color cBg       = color.new(#ffffff, 0)    // surface
+color cHeader   = color.new(#eef0f6, 0)    // th-bg
+color cSep      = color.new(#f4f5f8, 0)    // surface2
+color cRow      = color.new(#ffffff, 0)    // surface
+color cRowAlt   = color.new(#f4f5f8, 0)    // surface2
+color cLabel    = color.new(#1a1f2e, 0)    // text — oscuro sobre blanco
+color cValue    = color.new(#1a1f2e, 0)    // text
+color cTitle    = color.new(#374151, 0)    // th-text
+color cTicker   = color.new(#b45309, 0)    // amber — ticker destacado sin estridencia
+color cSepText  = color.new(#4b5563, 0)    // text2 — separador legible
+color cTeal     = color.new(#14532d, 0)    // tag-green-text — acciones/contratos
+color cRed      = color.new(#dc2626, 0)    // red
+color cWarnOk   = color.new(#16a34a, 0)    // green
+color cWarnBad  = color.new(#dc2626, 0)    // red
+
+// Colores condicionales
+bool  isWarn    = riskPctInput > 2.0 or capPct > 30 or rawShares == 0
 color cCapValue = capPct > 30 ? cWarnBad : cTeal
-color cAlertClr = (riskPctInput > 2.0 or capPct > 30 or rawShares == 0) ?
-     cWarnBad : cWarnOk
-color cAlertBg  = (riskPctInput > 2.0 or capPct > 30 or rawShares == 0) ?
-     color.new(#2a0010, 0) : color.new(#002a1a, 0)
+color cAlertClr = isWarn ? cWarnBad : cWarnOk
+color cAlertBg  = isWarn ?
+     color.new(#fee2e2, 0) :               // tag-red-bg
+     color.new(#dcfce7, 0)                 // tag-green-bg
+
+// Tamaño de texto resuelto una sola vez
+string SZ = tamPanelInput
 
 // ─── TABLA ────────────────────────────────────────────────────
 var table t = table.new(
      tablePosition(posInput), 2, 8,
      bgcolor      = cBg,
-     frame_color  = color.new(#1e3a5f, 0),
-     frame_width  = 2,
-     border_color = color.new(#1a3050, 0),
+     frame_color  = color.new(#d1d5db, 0),  // borde gris claro
+     frame_width  = 1,
+     border_color = color.new(#e5e7eb, 0),  // separador de celdas muy suave
      border_width = 1)
 
 if barstate.islast
@@ -124,19 +141,19 @@ if barstate.islast
     table.cell(t, 0, 0, "OUTLIER  POSITION  SIZER",
          bgcolor     = cHeader,
          text_color  = cTitle,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 0, syminfo.ticker,
          bgcolor     = cHeader,
          text_color  = cTicker,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
-    // ── Fila 1: Separador legible ─────────────────────────────
+    // ── Fila 1: Separador ─────────────────────────────────────
     table.cell(t, 0, 1, "  PARÁMETROS DE RIESGO",
          bgcolor     = cSep,
          text_color  = cSepText,
-         text_size   = size.tiny,
+         text_size   = size.tiny,           // siempre tiny — es una etiqueta de sección
          text_halign = text.align_left)
     table.cell(t, 1, 1, "",
          bgcolor     = cSep)
@@ -145,73 +162,74 @@ if barstate.islast
     table.cell(t, 0, 2, "  💰  Riesgo ($)",
          bgcolor     = cRow,
          text_color  = cLabel,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 2, sDollarRisk + "  ",
          bgcolor     = cRow,
          text_color  = cValue,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
     // ── Fila 3: ATR ───────────────────────────────────────────
     table.cell(t, 0, 3, "  📊  ATR(" + str.tostring(atrLenInput) + ")",
          bgcolor     = cRowAlt,
          text_color  = cLabel,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 3, sAtr + "  ",
          bgcolor     = cRowAlt,
          text_color  = cValue,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
     // ── Fila 4: Stop Loss ─────────────────────────────────────
     table.cell(t, 0, 4, "  🛑  Stop Loss",
          bgcolor     = cRow,
          text_color  = cLabel,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 4, sStopPrice + "  ",
          bgcolor     = cRow,
          text_color  = cRed,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
     // ── Fila 5: Acciones / Contratos ──────────────────────────
     table.cell(t, 0, 5, isOptions ? "  📑  Contratos" : "  📦  Acciones",
          bgcolor     = cRowAlt,
          text_color  = cLabel,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 5, sUnits + "  ",
          bgcolor     = cRowAlt,
          text_color  = cTeal,
-         text_size   = size.normal,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
     // ── Fila 6: Capital comprometido ──────────────────────────
     table.cell(t, 0, 6, "  💼  Capital usado",
          bgcolor     = cRow,
          text_color  = cLabel,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 6, sCapital + "  ",
          bgcolor     = cRow,
          text_color  = cCapValue,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_right)
 
     // ── Fila 7: Estado / Alerta ───────────────────────────────
     table.cell(t, 0, 7, "  " + sAlert,
          bgcolor     = cAlertBg,
          text_color  = cAlertClr,
-         text_size   = size.small,
+         text_size   = resolveSize(SZ),
          text_halign = text.align_left)
     table.cell(t, 1, 7, "",
          bgcolor     = cAlertBg)
 
 // ─── STOP LOSS DINÁMICO EN EL GRÁFICO ─────────────────────────
+// Sin tocar — misma línea que v4
 plot(stopPrice, "Stop Loss ATR",
-     color     = color.new(#ff3355, 40),
+     color     = color.new(#dc2626, 40),
      style     = plot.style_linebr,
      linewidth = 1)
