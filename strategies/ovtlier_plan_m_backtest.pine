@@ -28,6 +28,18 @@
 //   por construccion — incluirlos juntos como gate colapsaba la señal a
 //   0-2 ocurrencias en ~2 años de 1H, replicado en SPY, QQQ y MSFT.
 //
+// FIX CRITICO (hallazgo de campaña): el codigo original de v7 usa
+//   ta.highest(high, 252) para el maximo/minimo de 52 semanas, valido
+//   SOLO en Daily (252 dias de trading = 1 año). Copiado tal cual a 1H,
+//   252 barras = ~6 semanas, no 52 — esto explicaba que las señales de
+//   SPY se concentraran exclusivamente en abril 2020 (ventana de 6
+//   semanas dominada por el rango extremo del crash/recuperacion COVID)
+//   y desaparecieran el resto del historial. Corregido con
+//   yearLookbackInput (default 1650 barras ≈ 252 dias x 6.5 barras/dia
+//   en 1H). Todos los resultados de diagnostico obtenidos ANTES de este
+//   fix (incluyendo los 15 trades de SPY abril 2020) quedan invalidados
+//   y deben re-ejecutarse.
+//
 // VERSION HISTORY
 // backtest/v1 | 2026-08-23 | Primera version. Pipeline Dashboard v5.2
 //               (marketGreen) + Trend Template v7 (C1-C10, sin C11)
@@ -53,7 +65,8 @@ strategy(SCRIPT_NAME + " " + SCRIPT_VERSION,
      slippage             = 1,
      process_orders_on_close = true,
      calc_on_every_tick   = false,
-     max_bars_back        = 500)
+     max_bars_back        = 2000,
+     max_lines_count      = 500)
 
 // ═══════════════════════════════════════════════════════════════════
 // INPUTS
@@ -102,6 +115,8 @@ int   sma200LenInput = input.int(200, "SMA 200 Length", minval = 1, group = grpT
 int   slopePeriodInput = input.int(21, "SMA 200 Slope lookback (bars)", minval = 5, group = grpTT)
 float highPctInput   = input.float(25.0, "Max % below 52w High", minval = 1.0, group = grpTT)
 float lowPctInput    = input.float(25.0, "Min % above 52w Low",  minval = 1.0, group = grpTT)
+int   yearLookbackInput = input.int(1650, "Lookback 52 semanas (barras)", minval = 50, group = grpTT,
+     tooltip = "El original v7 usa 252 (dias de trading, valido en Daily). En 1H, 252 barras son solo ~6 semanas, no 52 — hay que convertir. 252 dias x ~6.5 barras/dia (sesion regular) = ~1650 barras en 1H. Ajustar si se cambia de timeframe (ej. 15m necesitaria ~6600).")
 
 // ── Trend Template v7 — Step 4 (C9, C10 — C11 excluido, ver header) ──
 string grpStep4 = "⚠️ Trend Template — Step 4"
@@ -184,8 +199,8 @@ bool marketGreen = spyAllGood and breadthOk and activeSectors >= minSectorsInput
 float sma50  = ta.sma(close, sma50LenInput)
 float sma150 = ta.sma(close, sma150LenInput)
 float sma200 = ta.sma(close, sma200LenInput)
-float high52w = ta.highest(high, 252)
-float low52w  = ta.lowest(low,  252)
+float high52w = ta.highest(high, yearLookbackInput)
+float low52w  = ta.lowest(low,  yearLookbackInput)
 
 bool c1 = close > sma150
 bool c2 = close > sma200
@@ -235,6 +250,7 @@ bool entryOk      = marketGreen and fullApproval
 var float entryPriceVar = na
 var float stopPriceVar  = na
 var float targetPriceVar= na
+var int   entryBarIndexVar = na
 
 float dollarRisk = balanceInput * (riskPctInput / 100)
 float stopDistAtSignal = atr14 * atrStopMultInput
@@ -255,9 +271,10 @@ if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter >
 
 // Al confirmarse la entrada, fijar SL/TP en base al ATR del momento de la señal
 if ta.change(strategy.opentrades) == 1
-    entryPriceVar  := strategy.opentrades.entry_price(0)
-    stopPriceVar   := entryPriceVar - stopDistAtSignal
-    targetPriceVar := entryPriceVar + stopDistAtSignal * rMultipleInput
+    entryPriceVar   := strategy.opentrades.entry_price(0)
+    stopPriceVar    := entryPriceVar - stopDistAtSignal
+    targetPriceVar  := entryPriceVar + stopDistAtSignal * rMultipleInput
+    entryBarIndexVar:= bar_index
     strategy.exit("Exit", "Long", stop = stopPriceVar, limit = targetPriceVar,
          comment_loss = "SL", comment_profit = "TP")
 
@@ -265,11 +282,19 @@ if ta.change(strategy.opentrades) == 1
 if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
     strategy.close("Long", comment = "Cierre sesion", immediately = true)
 
-// Reset de estado al cerrar la operacion
+// Al cerrar, dibujar SL/TP como lineas historicas permanentes (desde la
+// barra de entrada hasta la de cierre) para poder auditar visualmente
+// todos los trades pasados, no solo el que este abierto en cada momento.
 if ta.change(strategy.closedtrades) == 1
-    entryPriceVar   := na
-    stopPriceVar    := na
-    targetPriceVar  := na
+    if not na(entryBarIndexVar)
+        line.new(entryBarIndexVar, stopPriceVar,   bar_index, stopPriceVar,
+             color = color.new(#dc2626, 30), width = 1, style = line.style_solid)
+        line.new(entryBarIndexVar, targetPriceVar, bar_index, targetPriceVar,
+             color = color.new(#16a34a, 30), width = 1, style = line.style_solid)
+    entryPriceVar    := na
+    stopPriceVar     := na
+    targetPriceVar   := na
+    entryBarIndexVar := na
 
 // ═══════════════════════════════════════════════════════════════════
 // VISUALS
