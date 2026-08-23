@@ -238,7 +238,9 @@ var float targetPriceVar= na
 
 float dollarRisk = balanceInput * (riskPctInput / 100)
 float stopDistAtSignal = atr14 * atrStopMultInput
-int   qtyToEnter = f_calcShares(dollarRisk, stopDistAtSignal)
+int   qtyByRisk    = f_calcShares(dollarRisk, stopDistAtSignal)
+int   qtyByCapital = close > 0 ? math.floor(balanceInput / close) : 0
+int   qtyToEnter   = math.min(qtyByRisk, qtyByCapital)
 
 // Entrada — solo en sesion regular, sin posicion abierta, señal activa y sizing valido
 if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0
@@ -299,7 +301,7 @@ if barstate.isconfirmed
 
 // ── TABLA DE DIAGNOSTICO TEMPORAL (acumulada) — quitar antes de la campana final ──
 if barstate.islast
-    var table dbg = table.new(position.top_right, 2, 11, bgcolor = #eef0f6, border_width = 1)
+    var table dbg = table.new(position.top_right, 2, 12, bgcolor = #eef0f6, border_width = 1)
     table.cell(dbg, 0, 0, "DIAGNOSTICO (barras=" + str.tostring(bar_index + 1) + ")", bgcolor = #eef0f6, text_color = color.black, text_size = size.small)
     table.cell(dbg, 1, 0, "", bgcolor = #eef0f6)
     table.cell(dbg, 0, 1, "marketGreen veces",      bgcolor = color.white, text_color = color.black, text_size = size.small)
@@ -320,8 +322,10 @@ if barstate.islast
     table.cell(dbg, 1, 8, str.tostring(cntSessionOk), bgcolor = cntSessionOk > 0 ? #dcfce7 : #fee2e2, text_color = cntSessionOk > 0 ? #14532d : #991b1b, text_size = size.small)
     table.cell(dbg, 0, 9, "entrada real ejecutada",  bgcolor = color.white, text_color = color.black, text_size = size.small)
     table.cell(dbg, 1, 9, str.tostring(cntActualEntry), bgcolor = cntActualEntry > 0 ? #dcfce7 : #fee2e2, text_color = cntActualEntry > 0 ? #14532d : #991b1b, text_size = size.small)
-    table.cell(dbg, 0, 10, "trades cerrados",         bgcolor = #f4f5f8, text_color = color.black, text_size = size.small)
-    table.cell(dbg, 1, 10, str.tostring(strategy.closedtrades), bgcolor = color.white, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 0, 10, "qty riesgo vs capital",  bgcolor = #f4f5f8, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 1, 10, str.tostring(qtyByRisk) + " vs " + str.tostring(qtyByCapital), bgcolor = qtyByRisk > qtyByCapital ? #fee2e2 : #dcfce7, text_color = qtyByRisk > qtyByCapital ? #991b1b : #14532d, text_size = size.small)
+    table.cell(dbg, 0, 11, "trades cerrados",         bgcolor = color.white, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 1, 11, str.tostring(strategy.closedtrades), bgcolor = color.white, text_color = color.black, text_size = size.small)
 
 bgcolor(marketGreen ? color.new(#dcfce7, 90) : color.new(#fee2e2, 94), title = "Regimen Dashboard")
 plot(stopPriceVar,   "Stop Loss",   color = color.new(#dc2626, 20), style = plot.style_linebr, linewidth = 1)
