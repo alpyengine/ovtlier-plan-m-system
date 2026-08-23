@@ -16,6 +16,18 @@
 //   real en vivo es mas estricta que la de este backtest (el trader
 //   ademas evita ventanas de earnings manualmente).
 //
+// DECISION DE DISEÑO (revisada tras campaña de diagnostico):
+//   fullApproval = condCount == 8 (solo C1-C8 Minervini), identico a la
+//   variable homonima del codigo fuente de v7. C9 (sobreextension) y
+//   C10 (resistencia) se calculan y se muestran como informativos, pero
+//   NO forman parte del gate de entrada — igual que en el indicador en
+//   vivo, donde viven en filas separadas de la tabla ("Step 4") para
+//   juicio visual del trader, no como filtro automatico. Motivo tecnico:
+//   C8 (precio dentro del 25% del maximo 52 semanas) y C10 (sin maximo
+//   previo en 60 barras dentro de 2xATR) son casi mutuamente excluyentes
+//   por construccion — incluirlos juntos como gate colapsaba la señal a
+//   0-2 ocurrencias en ~2 años de 1H, replicado en SPY, QQQ y MSFT.
+//
 // VERSION HISTORY
 // backtest/v1 | 2026-08-23 | Primera version. Pipeline Dashboard v5.2
 //               (marketGreen) + Trend Template v7 (C1-C10, sin C11)
@@ -185,6 +197,17 @@ bool c7 = close >= low52w * (1 + lowPctInput / 100)
 bool c8 = close >= high52w * (1 - highPctInput / 100)
 
 // ── Trend Template v7 — Step 4: C9 sobreextension, C10 resistencia ──
+// INFORMATIVOS UNICAMENTE — no forman parte del gate de entrada.
+// Decision de diseno (revisada): el codigo fuente de v7 define
+// fullApproval = condCount == 8 (solo Minervini). C9/C10/C11 viven en
+// filas separadas de la tabla ("Step 4") porque Uhl los penso como
+// capa de juicio visual del trader, no como gate automatico. Ademas,
+// C8 (precio dentro del 25% del maximo 52w) y C10 (sin maximo previo
+// en 60 barras dentro de 2xATR) son casi mutuamente excluyentes por
+// construccion — incluir C10 como gate colapsaba la señal a 0-2
+// ocurrencias en ~2 años de 1H en SPY/QQQ/MSFT (hallazgo de campaña,
+// no un bug). Se mantienen calculados y visibles en el diagnostico
+// para contexto, igual que en la tabla del indicador en vivo.
 // ATR unico (atrLenInput, default 14) reutilizado para C9 y para el
 // stop-loss — ambos usan 14 por defecto en los indicadores originales,
 // se consolida en un solo calculo para el backtest.
@@ -202,9 +225,10 @@ for i = 1 to c10LookbackInput
 bool c10 = not obFound
 
 // ── Señal de entrada compuesta ─────────────────────────────────────
-// C11 (earnings) excluido — ver limitacion documentada en HEADER.
+// C9, C10, C11 excluidos del gate — ver nota arriba y limitacion en HEADER.
+// fullApproval replica EXACTAMENTE la variable homonima de v7: solo C1-C8.
 int  condCount    = (c1 ? 1 : 0) + (c2 ? 1 : 0) + (c3 ? 1 : 0) + (c4 ? 1 : 0) + (c5 ? 1 : 0) + (c6 ? 1 : 0) + (c7 ? 1 : 0) + (c8 ? 1 : 0)
-bool fullApproval = condCount == 8 and c9 and c10
+bool fullApproval = condCount == 8
 bool entryOk      = marketGreen and fullApproval
 
 // ── Gestion de la operacion — entrada, sizing, salida ──────────────
@@ -250,6 +274,8 @@ var int cntC10           = 0
 var int cntFullApproval  = 0
 var int cntEntryOk       = 0
 var int cntQtyOk         = 0
+var int cntSessionOk     = 0
+var int cntActualEntry   = 0
 
 if barstate.isconfirmed
     if marketGreen
@@ -266,10 +292,14 @@ if barstate.isconfirmed
         cntEntryOk += 1
     if entryOk and qtyToEnter > 0
         cntQtyOk += 1
+    if entryOk and qtyToEnter > 0 and session.ismarket
+        cntSessionOk += 1
+    if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0
+        cntActualEntry += 1
 
 // ── TABLA DE DIAGNOSTICO TEMPORAL (acumulada) — quitar antes de la campana final ──
 if barstate.islast
-    var table dbg = table.new(position.top_right, 2, 9, bgcolor = #eef0f6, border_width = 1)
+    var table dbg = table.new(position.top_right, 2, 11, bgcolor = #eef0f6, border_width = 1)
     table.cell(dbg, 0, 0, "DIAGNOSTICO (barras=" + str.tostring(bar_index + 1) + ")", bgcolor = #eef0f6, text_color = color.black, text_size = size.small)
     table.cell(dbg, 1, 0, "", bgcolor = #eef0f6)
     table.cell(dbg, 0, 1, "marketGreen veces",      bgcolor = color.white, text_color = color.black, text_size = size.small)
@@ -286,8 +316,12 @@ if barstate.islast
     table.cell(dbg, 1, 6, str.tostring(cntEntryOk), bgcolor = cntEntryOk > 0 ? #dcfce7 : #fee2e2, text_color = cntEntryOk > 0 ? #14532d : #991b1b, text_size = size.small)
     table.cell(dbg, 0, 7, "entryOk+qty>0 veces",     bgcolor = color.white, text_color = color.black, text_size = size.small)
     table.cell(dbg, 1, 7, str.tostring(cntQtyOk), bgcolor = cntQtyOk > 0 ? #dcfce7 : #fee2e2, text_color = cntQtyOk > 0 ? #14532d : #991b1b, text_size = size.small)
-    table.cell(dbg, 0, 8, "trades cerrados",         bgcolor = #f4f5f8, text_color = color.black, text_size = size.small)
-    table.cell(dbg, 1, 8, str.tostring(strategy.closedtrades), bgcolor = color.white, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 0, 8, "+session.ismarket veces", bgcolor = #f4f5f8, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 1, 8, str.tostring(cntSessionOk), bgcolor = cntSessionOk > 0 ? #dcfce7 : #fee2e2, text_color = cntSessionOk > 0 ? #14532d : #991b1b, text_size = size.small)
+    table.cell(dbg, 0, 9, "entrada real ejecutada",  bgcolor = color.white, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 1, 9, str.tostring(cntActualEntry), bgcolor = cntActualEntry > 0 ? #dcfce7 : #fee2e2, text_color = cntActualEntry > 0 ? #14532d : #991b1b, text_size = size.small)
+    table.cell(dbg, 0, 10, "trades cerrados",         bgcolor = #f4f5f8, text_color = color.black, text_size = size.small)
+    table.cell(dbg, 1, 10, str.tostring(strategy.closedtrades), bgcolor = color.white, text_color = color.black, text_size = size.small)
 
 bgcolor(marketGreen ? color.new(#dcfce7, 90) : color.new(#fee2e2, 94), title = "Regimen Dashboard")
 plot(stopPriceVar,   "Stop Loss",   color = color.new(#dc2626, 20), style = plot.style_linebr, linewidth = 1)
