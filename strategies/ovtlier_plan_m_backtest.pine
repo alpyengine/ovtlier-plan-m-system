@@ -1,0 +1,265 @@
+// ═══════════════════════════════════════════════════════════════════
+// © Ovtlier Quant-Trading | Plan M — Backtest v1
+// Metodologia: Christopher Uhl / Outlier University
+// ───────────────────────────────────────────────────────────────────
+// Arquitectura: strategy() monolitico (Opcion A del spec de diseno).
+// Replica la logica de dos indicadores en vivo dentro de un unico
+// script para poder correr backtest.strategy() sobre ellos:
+//   - Market Dashboard v5.2  -> gate de regimen: marketGreen
+//   - Ovtlier Trend Template v7 -> señal de entrada: fullApproval
+//
+// LIMITACION CONOCIDA (documentada, no un bug):
+//   C11 (ventana de earnings) del Trend Template v7 es un input MANUAL
+//   en el indicador en vivo (earningsDays). No existe feed de calendario
+//   de earnings historico fiable en Pine Script v6 sin datos externos,
+//   por lo que C11 queda EXCLUIDO de este backtest. La señal de entrada
+//   real en vivo es mas estricta que la de este backtest (el trader
+//   ademas evita ventanas de earnings manualmente).
+//
+// VERSION HISTORY
+// backtest/v1 | 2026-08-23 | Primera version. Pipeline Dashboard v5.2
+//               (marketGreen) + Trend Template v7 (C1-C10, sin C11)
+//               como señal de entrada unica. Salida: SL 1.5xATR(14),
+//               TP configurable en multiplos de R (2R Config A / 3R
+//               Config B), cierre forzado a fin de sesion regular.
+// ═══════════════════════════════════════════════════════════════════
+
+//@version=6
+
+// ─── VERSION CONTROL ───────────────────────────────────────────────
+string SCRIPT_VERSION = "backtest/v1"
+string SCRIPT_DATE    = "2026-08-23"
+string SCRIPT_NAME    = "Ovtlier Plan M Backtest V1.0"
+
+// ─── SCRIPT DECLARATION ─────────────────────────────────────────────
+strategy(SCRIPT_NAME + " " + SCRIPT_VERSION,
+     overlay              = true,
+     initial_capital      = 25000,
+     currency             = currency.USD,
+     commission_type      = strategy.commission.percent,
+     commission_value     = 0.05,
+     slippage             = 1,
+     process_orders_on_close = true,
+     calc_on_every_tick   = false,
+     max_bars_back        = 500)
+
+// ═══════════════════════════════════════════════════════════════════
+// INPUTS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Dashboard v5.2 — Regimen SPY ─────────────────────────────────
+string grpDash = "📊 Dashboard — Regimen SPY"
+int   emaFastInput   = input.int(10, "EMA Fast",              minval = 1,  group = grpDash)
+int   emaMidInput    = input.int(20, "EMA Mid",                minval = 1,  group = grpDash)
+int   emaSlowInput   = input.int(50, "EMA Slow",               minval = 1,  group = grpDash)
+int   rsiLengthInput = input.int(14, "RSI Length",             minval = 1,  group = grpDash)
+int   rsiBullInput   = input.int(55, "RSI Bull threshold (>)", minval = 40, maxval = 80, group = grpDash)
+
+// ── Dashboard v5.2 — Sectores ────────────────────────────────────
+string grpSect = "📊 Dashboard — Sectores"
+int    minSectorsInput = input.int(3, "Min. sectores alcistas para operar", minval = 1, maxval = 11, group = grpSect)
+string tkXLK = input.symbol("AMEX:XLK", "Tecnologia",        group = grpSect)
+string tkIGV = input.symbol("AMEX:IGV", "Software",          group = grpSect)
+string tkXLF = input.symbol("AMEX:XLF", "Financiero",        group = grpSect)
+string tkXLI = input.symbol("AMEX:XLI", "Industrial",        group = grpSect)
+string tkXLY = input.symbol("AMEX:XLY", "Consumo Discr.",    group = grpSect)
+string tkXLC = input.symbol("AMEX:XLC", "Comunicaciones",    group = grpSect)
+string tkXLV = input.symbol("AMEX:XLV", "Sanidad",           group = grpSect)
+string tkXLE = input.symbol("AMEX:XLE", "Energia",           group = grpSect)
+string tkDBA = input.symbol("AMEX:DBA", "Agricultura",       group = grpSect)
+string tkDBC = input.symbol("AMEX:DBC", "Commodities",       group = grpSect)
+string tkGLD = input.symbol("AMEX:GLD", "Metales Preciosos", group = grpSect)
+
+bool excludeXLKInput = input.bool(false, "Excluir Tecnologia (XLK)",       group = grpSect)
+bool excludeIGVInput = input.bool(false, "Excluir Software (IGV)",         group = grpSect)
+bool excludeXLFInput = input.bool(false, "Excluir Financiero (XLF)",       group = grpSect)
+bool excludeXLIInput = input.bool(false, "Excluir Industrial (XLI)",       group = grpSect)
+bool excludeXLYInput = input.bool(false, "Excluir Consumo Discr. (XLY)",   group = grpSect)
+bool excludeXLCInput = input.bool(false, "Excluir Comunicaciones (XLC)",   group = grpSect)
+bool excludeXLVInput = input.bool(true,  "Excluir Sanidad (XLV)",          group = grpSect)
+bool excludeXLEInput = input.bool(true,  "Excluir Energia (XLE)",          group = grpSect)
+bool excludeDBAInput = input.bool(true,  "Excluir Agricultura (DBA)",      group = grpSect)
+bool excludeDBCInput = input.bool(true,  "Excluir Commodities (DBC)",      group = grpSect)
+bool excludeGLDInput = input.bool(true,  "Excluir Metales Preciosos (GLD)",group = grpSect)
+
+// ── Trend Template v7 — Minervini (C1-C8) ────────────────────────
+string grpTT = "📊 Trend Template — Minervini"
+int   sma50LenInput  = input.int(50,  "SMA 50 Length",  minval = 1, group = grpTT)
+int   sma150LenInput = input.int(150, "SMA 150 Length", minval = 1, group = grpTT)
+int   sma200LenInput = input.int(200, "SMA 200 Length", minval = 1, group = grpTT)
+int   slopePeriodInput = input.int(21, "SMA 200 Slope lookback (bars)", minval = 5, group = grpTT)
+float highPctInput   = input.float(25.0, "Max % below 52w High", minval = 1.0, group = grpTT)
+float lowPctInput    = input.float(25.0, "Min % above 52w Low",  minval = 1.0, group = grpTT)
+
+// ── Trend Template v7 — Step 4 (C9, C10 — C11 excluido, ver header) ──
+string grpStep4 = "⚠️ Trend Template — Step 4"
+float atrMaxMultInput  = input.float(2.5, "C9 — Max ATR multiplier (sobreextension)", minval = 0.5, step = 0.1, group = grpStep4)
+int   c10LookbackInput = input.int(60,   "C10 — Lookback zona resistencia (bars)",    minval = 10,  group = grpStep4)
+
+// ── Riesgo — Position Sizer v5 + Salida ──────────────────────────
+string grpRisk = "⚠️ Riesgo y Salida"
+float balanceInput    = input.float(25000, "Balance de cuenta ($)",       minval = 100, step = 1000, group = grpRisk)
+float riskPctInput    = input.float(1.0,   "Riesgo por operacion (%)",    minval = 0.1, maxval = 5.0, step = 0.1, group = grpRisk)
+int   atrLenInput     = input.int(14,      "Longitud ATR (C9 + Stop)",    minval = 1,   group = grpRisk)
+float atrStopMultInput= input.float(1.5,   "Multiplicador ATR (stop)",    minval = 0.5, step = 0.1, group = grpRisk,
+     tooltip = "N=1.5 coherente con Plan A. El default del Position Sizer v5 en vivo es 2.0 — aqui se fija en 1.5 por decision de diseno del backtest.")
+float rMultipleInput  = input.float(2.0,   "Take-Profit (multiplos de R)",minval = 0.5, step = 0.5, group = grpRisk,
+     tooltip = "Config A = 2.0 | Config B = 3.0. Cambiar solo esta variable entre configuraciones (protocolo: una variable a la vez).")
+
+// ═══════════════════════════════════════════════════════════════════
+// TYPES (UDTs)
+// ═══════════════════════════════════════════════════════════════════
+// No se requieren UDTs — el estado de la operacion se rastrea con
+// variables `var` primitivas (ver seccion CALCULATIONS).
+
+// ═══════════════════════════════════════════════════════════════════
+// FUNCTIONS
+// ═══════════════════════════════════════════════════════════════════
+
+//@function Replica f_isBullish() del Market Dashboard v5.2 — EMA10>EMA20 and close>EMA50 en el sector dado
+//@param sym (string) Ticker del sector a evaluar
+f_isBullish(string sym) =>
+    [c, e10, e20, e50] = request.security(sym, timeframe.period,
+         [close[1],
+          ta.ema(close, emaFastInput)[1],
+          ta.ema(close, emaMidInput)[1],
+          ta.ema(close, emaSlowInput)[1]],
+         lookahead = barmerge.lookahead_on)
+    e10 > e20 and c > e50
+
+//@function Numero de acciones a comprar dado el riesgo en $ y la distancia del stop — replica calcShares() del Position Sizer v5
+//@param dollarRisk (float) Riesgo maximo en dolares
+//@param stopDist   (float) Distancia del stop en $ por accion
+f_calcShares(float dollarRisk, float stopDist) =>
+    stopDist > 0 ? math.floor(dollarRisk / stopDist) : 0
+
+// ═══════════════════════════════════════════════════════════════════
+// CALCULATIONS
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Dashboard v5.2 — bloque SPY (lookahead_on + [1], igual que en vivo) ──
+float spyClose  = request.security("AMEX:SPY", timeframe.period, close[1],                       lookahead = barmerge.lookahead_on)
+float spyEma10  = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaFastInput)[1],  lookahead = barmerge.lookahead_on)
+float spyEma20  = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaMidInput)[1],   lookahead = barmerge.lookahead_on)
+float spyEma50  = request.security("AMEX:SPY", timeframe.period, ta.ema(close, emaSlowInput)[1],  lookahead = barmerge.lookahead_on)
+float spyEma200 = request.security("AMEX:SPY", timeframe.period, ta.ema(close, 200)[1],           lookahead = barmerge.lookahead_on)
+float spyRsi    = request.security("AMEX:SPY", timeframe.period, ta.rsi(close, rsiLengthInput)[1],lookahead = barmerge.lookahead_on)
+
+bool spyTrend   = spyEma10 > spyEma20 and spyClose > spyEma50
+bool spyBuy     = spyRsi > rsiBullInput
+bool spyAllGood = spyTrend and spyBuy
+bool breadthOk  = spyRsi > 50 and spyClose > spyEma200
+
+// ── Dashboard v5.2 — sectores ─────────────────────────────────────
+bool xlkBull = f_isBullish(tkXLK)
+bool igvBull = f_isBullish(tkIGV)
+bool xlfBull = f_isBullish(tkXLF)
+bool xliBull = f_isBullish(tkXLI)
+bool xlyBull = f_isBullish(tkXLY)
+bool xlcBull = f_isBullish(tkXLC)
+bool xlvBull = f_isBullish(tkXLV)
+bool xleBull = f_isBullish(tkXLE)
+bool dbaBull = f_isBullish(tkDBA)
+bool dbcBull = f_isBullish(tkDBC)
+bool gldBull = f_isBullish(tkGLD)
+
+int activeSectors = (not excludeXLKInput and xlkBull ? 1 : 0) + (not excludeIGVInput and igvBull ? 1 : 0) + (not excludeXLFInput and xlfBull ? 1 : 0) + (not excludeXLIInput and xliBull ? 1 : 0) + (not excludeXLYInput and xlyBull ? 1 : 0) + (not excludeXLCInput and xlcBull ? 1 : 0) + (not excludeXLVInput and xlvBull ? 1 : 0) + (not excludeXLEInput and xleBull ? 1 : 0) + (not excludeDBAInput and dbaBull ? 1 : 0) + (not excludeDBCInput and dbcBull ? 1 : 0) + (not excludeGLDInput and gldBull ? 1 : 0)
+
+// ── Dashboard v5.2 — semaforo de regimen (gate binario) ───────────
+bool marketGreen = spyAllGood and breadthOk and activeSectors >= minSectorsInput
+
+// ── Trend Template v7 — Minervini C1-C8 (simbolo del chart) ──────
+float sma50  = ta.sma(close, sma50LenInput)
+float sma150 = ta.sma(close, sma150LenInput)
+float sma200 = ta.sma(close, sma200LenInput)
+float high52w = ta.highest(high, 252)
+float low52w  = ta.lowest(low,  252)
+
+bool c1 = close > sma150
+bool c2 = close > sma200
+bool c3 = sma150 > sma200
+bool c4 = sma200 > sma200[slopePeriodInput]
+bool c5 = sma50 > sma150 and sma50 > sma200
+bool c6 = close > sma50
+bool c7 = close >= low52w * (1 + lowPctInput / 100)
+bool c8 = close >= high52w * (1 - highPctInput / 100)
+
+// ── Trend Template v7 — Step 4: C9 sobreextension, C10 resistencia ──
+// ATR unico (atrLenInput, default 14) reutilizado para C9 y para el
+// stop-loss — ambos usan 14 por defecto en los indicadores originales,
+// se consolida en un solo calculo para el backtest.
+float atr14 = ta.atr(atrLenInput)
+float distToSma50   = math.abs(close - sma50)
+float atrMultiplier = atr14 > 0 ? distToSma50 / atr14 : 0.0
+bool  c9 = atrMultiplier < atrMaxMultInput
+
+float resistanceTop    = close + 2 * atr14
+float resistanceBottom = close
+bool  obFound = false
+for i = 1 to c10LookbackInput
+    if high[i] >= resistanceBottom and high[i] <= resistanceTop
+        obFound := true
+bool c10 = not obFound
+
+// ── Señal de entrada compuesta ─────────────────────────────────────
+// C11 (earnings) excluido — ver limitacion documentada en HEADER.
+int  condCount    = (c1 ? 1 : 0) + (c2 ? 1 : 0) + (c3 ? 1 : 0) + (c4 ? 1 : 0) + (c5 ? 1 : 0) + (c6 ? 1 : 0) + (c7 ? 1 : 0) + (c8 ? 1 : 0)
+bool fullApproval = condCount == 8 and c9 and c10
+bool entryOk      = marketGreen and fullApproval
+
+// ── Gestion de la operacion — entrada, sizing, salida ──────────────
+var float entryPriceVar = na
+var float stopPriceVar  = na
+var float targetPriceVar= na
+
+float dollarRisk = balanceInput * (riskPctInput / 100)
+float stopDistAtSignal = atr14 * atrStopMultInput
+int   qtyToEnter = f_calcShares(dollarRisk, stopDistAtSignal)
+
+// Entrada — solo en sesion regular, sin posicion abierta, señal activa y sizing valido
+if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0
+    strategy.entry("Long", strategy.long, qty = qtyToEnter)
+
+// Al confirmarse la entrada, fijar SL/TP en base al ATR del momento de la señal
+if ta.change(strategy.opentrades) == 1
+    entryPriceVar  := strategy.opentrades.entry_price(0)
+    stopPriceVar   := entryPriceVar - stopDistAtSignal
+    targetPriceVar := entryPriceVar + stopDistAtSignal * rMultipleInput
+    strategy.exit("Exit", "Long", stop = stopPriceVar, limit = targetPriceVar,
+         comment_loss = "SL", comment_profit = "TP")
+
+// Cierre forzado — ultima barra de la sesion regular (day-trade puro, sin excepciones)
+if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
+    strategy.close("Long", comment = "Cierre sesion", immediately = true)
+
+// Reset de estado al cerrar la operacion
+if ta.change(strategy.closedtrades) == 1
+    entryPriceVar   := na
+    stopPriceVar    := na
+    targetPriceVar  := na
+
+// ═══════════════════════════════════════════════════════════════════
+// VISUALS
+// ═══════════════════════════════════════════════════════════════════
+bgcolor(marketGreen ? color.new(#dcfce7, 90) : color.new(#fee2e2, 94), title = "Regimen Dashboard")
+plot(stopPriceVar,   "Stop Loss",   color = color.new(#dc2626, 20), style = plot.style_linebr, linewidth = 1)
+plot(targetPriceVar, "Take Profit", color = color.new(#16a34a, 20), style = plot.style_linebr, linewidth = 1)
+plotshape(entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0,
+     title = "Senal de entrada", style = shape.triangleup, location = location.belowbar,
+     color = color.new(#16a34a, 0), size = size.tiny)
+
+// ═══════════════════════════════════════════════════════════════════
+// ALERTS
+// ═══════════════════════════════════════════════════════════════════
+// alertcondition() requiere const string — para mensajes dinamicos con
+// ticker se usa alert() dentro de los bloques if (regla del proyecto).
+string alertBase = syminfo.ticker + " | " + SCRIPT_NAME + " " + SCRIPT_VERSION
+
+if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0
+    alert("🟢 ENTRADA Plan M | " + alertBase + " | Qty: " + str.tostring(qtyToEnter), alert.freq_once_per_bar_close)
+
+if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
+    alert("🕐 CIERRE SESION Plan M | " + alertBase, alert.freq_once_per_bar_close)
+
+alertcondition(marketGreen and not marketGreen[1], title = "Regimen paso a Verde", message = "Plan M Backtest | Regimen Dashboard: Verde")
+alertcondition(fullApproval and not fullApproval[1], title = "Trend Template — Full Approval", message = "Plan M Backtest | Trend Template: 8/8 + C9 + C10 OK")
