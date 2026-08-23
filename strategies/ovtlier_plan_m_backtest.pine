@@ -239,7 +239,14 @@ var float targetPriceVar= na
 float dollarRisk = balanceInput * (riskPctInput / 100)
 float stopDistAtSignal = atr14 * atrStopMultInput
 int   qtyByRisk    = f_calcShares(dollarRisk, stopDistAtSignal)
-int   qtyByCapital = close > 0 ? math.floor(balanceInput / close) : 0
+// qtyByCapital usa strategy.equity (capital REAL en ese momento, ya reflejando
+// PyG acumulada), no balanceInput fijo — evita pedir mas acciones de las que
+// realmente caben y que el motor las recorte via "Margin call" (hallazgo de
+// campaña: 1 accion recortada en SPY 2020-04-29 con el calculo anterior).
+// dollarRisk SI se mantiene sobre balanceInput fijo, a proposito — es la
+// metodologia de riesgo no-compuesto que usas en vivo (1% de una base fija,
+// no un % que escala con el equity).
+int   qtyByCapital = close > 0 ? math.floor(strategy.equity / close) : 0
 int   qtyToEnter   = math.min(qtyByRisk, qtyByCapital)
 
 // Entrada — solo en sesion regular, sin posicion abierta, señal activa y sizing valido
@@ -348,4 +355,4 @@ if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfi
     alert("🕐 CIERRE SESION Plan M | " + alertBase, alert.freq_once_per_bar_close)
 
 alertcondition(marketGreen and not marketGreen[1], title = "Regimen paso a Verde", message = "Plan M Backtest | Regimen Dashboard: Verde")
-alertcondition(fullApproval and not fullApproval[1], title = "Trend Template — Full Approval", message = "Plan M Backtest | Trend Template: 8/8 + C9 + C10 OK")
+alertcondition(fullApproval and not fullApproval[1], title = "Trend Template — Full Approval", message = "Plan M Backtest | Trend Template: 8/8 Minervini OK (C9/C10 informativos, no gating)")
