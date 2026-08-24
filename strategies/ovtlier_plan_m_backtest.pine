@@ -40,6 +40,18 @@
 //   fix (incluyendo los 15 trades de SPY abril 2020) quedan invalidados
 //   y deben re-ejecutarse.
 //
+// EXPERIMENTO — CALIDAD DE ENTRADA (tras campaña con fix de 52 semanas):
+//   Con fullApproval = solo C1-C8, resultados en SPY/QQQ/MSFT (1H,
+//   day-trade, ~200-470 trades cada uno): PF 0.47-0.64, muy por debajo
+//   del umbral de 1,2x. Con allowOvernightInput=true, el PF mejora
+//   sustancialmente (0.89-1.01) pero sigue sin cumplir el umbral, y el
+//   SL medio empeora 15-33% por riesgo de gap (coste real del overnight,
+//   confirma la razon original para day-trade puro). Hipotesis actual:
+//   el problema es la CALIDAD de entrada, no la salida — win rate 37-44%
+//   sugiere entradas sobreextendidas que C9 filtraria. fullApproval
+//   ahora reincluye C9 (ver nota junto a su definicion) manteniendo C10
+//   excluido por su contradiccion estructural con C8.
+//
 // VERSION HISTORY
 // backtest/v1 | 2026-08-23 | Primera version. Pipeline Dashboard v5.2
 //               (marketGreen) + Trend Template v7 (C1-C10, sin C11)
@@ -242,10 +254,17 @@ for i = 1 to c10LookbackInput
 bool c10 = not obFound
 
 // ── Señal de entrada compuesta ─────────────────────────────────────
-// C9, C10, C11 excluidos del gate — ver nota arriba y limitacion en HEADER.
-// fullApproval replica EXACTAMENTE la variable homonima de v7: solo C1-C8.
+// EXPERIMENTO (campaña de calidad de entrada): C9 vuelve a formar parte
+// del gate. C10 sigue excluido — su contradiccion estructural con C8
+// (ambos casi mutuamente excluyentes) sigue siendo valida y no cambia.
+// C9 (sobreextension vs SMA50 en ATRs) no tiene ese conflicto: es
+// independiente de la logica de 52 semanas, y en el indicador en vivo
+// existe precisamente para evitar comprar activos ya extendidos antes
+// de una reversion — hipotesis: el win rate flojo (37-44%) del gate
+// solo-Minervini viene de dejar pasar entradas sobreextendidas que C9
+// habria filtrado. C11 sigue excluido — ver limitacion en HEADER.
 int  condCount    = (c1 ? 1 : 0) + (c2 ? 1 : 0) + (c3 ? 1 : 0) + (c4 ? 1 : 0) + (c5 ? 1 : 0) + (c6 ? 1 : 0) + (c7 ? 1 : 0) + (c8 ? 1 : 0)
-bool fullApproval = condCount == 8
+bool fullApproval = condCount == 8 and c9
 bool entryOk      = marketGreen and fullApproval
 
 // ── Gestion de la operacion — entrada, sizing, salida ──────────────
