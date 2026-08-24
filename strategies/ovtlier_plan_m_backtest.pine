@@ -78,7 +78,7 @@ strategy(SCRIPT_NAME + " " + SCRIPT_VERSION,
      process_orders_on_close = true,
      calc_on_every_tick   = false,
      max_bars_back        = 2000,
-     max_lines_count      = 500)
+     max_boxes_count       = 500)
 
 // ═══════════════════════════════════════════════════════════════════
 // INPUTS
@@ -305,15 +305,21 @@ if ta.change(strategy.opentrades) == 1
 if not allowOvernightInput and strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
     strategy.close("Long", comment = "Cierre sesion", immediately = true)
 
-// Al cerrar, dibujar SL/TP como lineas historicas permanentes (desde la
-// barra de entrada hasta la de cierre) para poder auditar visualmente
-// todos los trades pasados, no solo el que este abierto en cada momento.
+// Al cerrar, dibujar el rango SL-TP como UNA caja historica permanente
+// (desde la barra de entrada hasta la de cierre). Antes usaba 2 lineas
+// por trade (SL + TP) — con activos de 400+ trades eso supera el limite
+// duro de Pine de 500 objetos `line`, y Pine borraba en silencio las mas
+// antiguas al llegar al tope (por eso el historial "desaparecia" al
+// hacer scroll/zoom — no era un problema de renderizado de TradingView,
+// era que los objetos ya no existian). Una box por trade es la mitad de
+// coste: cabe todo el historial de cualquier ticker de la campaña.
 if ta.change(strategy.closedtrades) == 1
     if not na(entryBarIndexVar)
-        line.new(entryBarIndexVar, stopPriceVar,   bar_index, stopPriceVar,
-             color = color.new(#dc2626, 30), width = 1, style = line.style_solid)
-        line.new(entryBarIndexVar, targetPriceVar, bar_index, targetPriceVar,
-             color = color.new(#16a34a, 30), width = 1, style = line.style_solid)
+        bool wasWin = strategy.closedtrades > 0 ? strategy.closedtrades.profit(strategy.closedtrades - 1) > 0 : false
+        color boxColor = wasWin ? color.new(#16a34a, 85) : color.new(#dc2626, 85)
+        color borderColor = wasWin ? color.new(#16a34a, 30) : color.new(#dc2626, 30)
+        box.new(entryBarIndexVar, targetPriceVar, bar_index, stopPriceVar,
+             border_color = borderColor, bgcolor = boxColor, border_width = 1)
     entryPriceVar    := na
     stopPriceVar     := na
     targetPriceVar   := na
