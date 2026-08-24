@@ -52,6 +52,30 @@
 //   ahora reincluye C9 (ver nota junto a su definicion) manteniendo C10
 //   excluido por su contradiccion estructural con C8.
 //
+// NOTA (verificado, no es bug de renderizado) — distribucion temporal
+//   de trades en MSFT (181 trades, 2020-12 a 2026-08): 2020:3, 2021:51,
+//   2022:3, 2023:52, 2024:28, 2025:41, 2026(parcial):3. Al revisar boxes
+//   SL/TP en el grafico se penso inicialmente que faltaban boxes en
+//   tramos recientes (solo 3 en 2025-08/2026-08) — confirmado con el CSV
+//   de "List of Trades" y navegacion manual por distintos tramos del
+//   historico que NO es un fallo de dibujo: las boxes SI existen en todo
+//   el historial, la estrategia simplemente genera trades a un ritmo muy
+//   irregular segun el regimen de mercado. El gate marketGreen+
+//   fullApproval es muy restrictivo — años como 2022 casi no producen
+//   señales, mientras que 2021/2023 concentran rachas densas de trades
+//   en pocas semanas. Relevante para la campaña de "calidad de entrada":
+//   la escasez de señales recientes (2025-2026) no es un artefacto
+//   visual, es una caracteristica real del gate que puede afectar la
+//   representatividad de resultados en tramos cortos del backtest.
+//
+// FIX VISUAL (tabla de diagnostico): se elimino el gate
+//   `if barstate.islast` de la tabla `dbg` — ese gate (y tambien
+//   `barstate.islastconfirmedhistory`, probado antes) no sigue el cursor
+//   de Bar Replay y dejaba la tabla en blanco durante la reproduccion.
+//   La tabla ahora se actualiza sin condicion, en cada barra confirmada.
+//   Se añadio ademas la celda de valor que faltaba en la fila
+//   "8/8 Minervini veces" (quedaba vacia por una celda no pintada).
+//
 // VERSION HISTORY
 // backtest/v1 | 2026-08-23 | Primera version. Pipeline Dashboard v5.2
 //               (marketGreen) + Trend Template v7 (C1-C10, sin C11)
@@ -361,6 +385,9 @@ if barstate.isconfirmed
         cntActualEntry += 1
 
 // ── TABLA DE DIAGNOSTICO TEMPORAL (acumulada) — quitar antes de la campana final ──
+// Sin gate de barstate: `barstate.islast` (y `barstate.islastconfirmedhistory`,
+// probado antes) no siguen el cursor de Bar Replay y dejaban la tabla en
+// blanco durante la reproduccion. Se actualiza en cada barra confirmada.
 var table dbg = table.new(position.top_right, 2, 13, bgcolor = #eef0f6, border_width = 1)
 table.cell(dbg, 0, 0, "DIAGNOSTICO (barras=" + str.tostring(bar_index + 1) + ")", bgcolor = #eef0f6, text_color = color.black, text_size = size.small)
 table.cell(dbg, 1, 0, "", bgcolor = #eef0f6)
