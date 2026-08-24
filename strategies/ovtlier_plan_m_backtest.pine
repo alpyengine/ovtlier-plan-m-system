@@ -132,6 +132,8 @@ float atrStopMultInput= input.float(1.5,   "Multiplicador ATR (stop)",    minval
      tooltip = "N=1.5 coherente con Plan A. El default del Position Sizer v5 en vivo es 2.0 — aqui se fija en 1.5 por decision de diseno del backtest.")
 float rMultipleInput  = input.float(2.0,   "Take-Profit (multiplos de R)",minval = 0.5, step = 0.5, group = grpRisk,
      tooltip = "Config A = 2.0 | Config B = 3.0. Cambiar solo esta variable entre configuraciones (protocolo: una variable a la vez).")
+bool  allowOvernightInput = input.bool(false, "Permitir overnight (desactiva cierre forzado de sesion)", group = grpRisk,
+     tooltip = "Por defecto FALSE = day-trade puro, igual que el diseño original (Pregunta 3 del spec). Al activarlo, el trade corre hasta SL/TP natural aunque cruce a otro dia — introduce riesgo de gap que el diseño original evitaba a proposito. Usar como experimento aislado (una variable a la vez), no como cambio permanente sin evaluar el trade-off.")
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES (UDTs)
@@ -278,8 +280,10 @@ if ta.change(strategy.opentrades) == 1
     strategy.exit("Exit", "Long", stop = stopPriceVar, limit = targetPriceVar,
          comment_loss = "SL", comment_profit = "TP")
 
-// Cierre forzado — ultima barra de la sesion regular (day-trade puro, sin excepciones)
-if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
+// Cierre forzado — ultima barra de la sesion regular (day-trade puro por defecto).
+// Si allowOvernightInput = true, esta regla se desactiva y el trade corre
+// hasta SL/TP natural, aunque cruce a otro dia (introduce riesgo de gap).
+if not allowOvernightInput and strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
     strategy.close("Long", comment = "Cierre sesion", immediately = true)
 
 // Al cerrar, dibujar SL/TP como lineas historicas permanentes (desde la
@@ -376,7 +380,7 @@ string alertBase = syminfo.ticker + " | " + SCRIPT_NAME + " " + SCRIPT_VERSION
 if entryOk and strategy.position_size == 0 and session.ismarket and qtyToEnter > 0
     alert("🟢 ENTRADA Plan M | " + alertBase + " | Qty: " + str.tostring(qtyToEnter), alert.freq_once_per_bar_close)
 
-if strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
+if not allowOvernightInput and strategy.position_size > 0 and session.islastbar_regular and barstate.isconfirmed
     alert("🕐 CIERRE SESION Plan M | " + alertBase, alert.freq_once_per_bar_close)
 
 alertcondition(marketGreen and not marketGreen[1], title = "Regimen paso a Verde", message = "Plan M Backtest | Regimen Dashboard: Verde")
