@@ -201,3 +201,55 @@ Salvedades que hay que sopesar antes de adoptarla como versión operativa:
 
 *Documento generado durante la sesión de diagnóstico del 2026-08-24. Actualizar de
 forma acumulativa en corridas futuras — no sobrescribir el historial de hallazgos.*
+
+---
+
+## 7. Aislamiento de C9 (encargo La Granja, 2026-08-24)
+
+**Pregunta:** ¿la mejora de §4.4 viene de que C9 filtra señales de peor calidad, o de
+otra causa?
+
+**Método:** comparar §4.2 vs §4.4 directamente no vale — al añadir C9 como gate
+cambia cuándo queda libre la posición, así que las dos corridas tienen secuencias
+de trades distintas, no "los mismos trades menos los que C9 tacha". Se usó una
+variante de diagnóstico (`ovtlier_plan_m_c9_isolation.pine`) con el gate real en
+solo C1-C8 (idéntica secuencia que §4.2) que etiqueta cada trade con si C9 también
+era cierto en ese momento, sin que afecte a qué entra. Esto separa la población
+real de §4.2 en dos subgrupos sin el problema de secuencias divergentes.
+
+**Resultado — PF por subgrupo, dentro de la población de §4.2 (overnight=true):**
+
+| Ticker | PF si C9=SÍ | n | PF si C9=NO | n |
+|---|---|---|---|---|
+| SPY  | 0.781 | 93  | 0.949 | 132 |
+| QQQ  | 0.855 | 104 | 1.094 | 131 |
+| MSFT | 0.809 | 92  | 0.980 | 101 |
+
+**C9=SÍ es peor que C9=NO en los tres tickers, sin excepción.**
+
+**Veredicto: C9 no aporta filtro real de calidad.** La mejora observada en §4.4
+(PF 1.21-1.40 con C9 como gate) no viene de descartar señales malas — dentro de la
+misma población de entradas, el subgrupo que cumple C9 rinde peor, no mejor. La
+mejora de §4.4 es más probablemente un **efecto de espaciado**: al reducir ~65-70%
+las entradas, quedan menos trades solapados y cada uno corre más tiempo sin que una
+nueva señal fuerce su cierre — cambia la muestra de oportunidades capturadas, no la
+calidad de la selección.
+
+Esto conecta directamente con la fragilidad ya detectada en §4.4 (quitar 1 trade
+tumba el PF por debajo de 1,2× en QQQ y MSFT): la combinación ganadora probablemente
+depende más de qué trades concretos caen en esa secuencia más espaciada que de un
+mecanismo de selección robusto.
+
+**Conclusión combinada (preguntas 1-3 del encargo):** el hallazgo de §4.4 es
+**indeterminado con los datos disponibles** — ni "C9 filtra con criterio" (descartado
+por este aislamiento) ni "ruido puro" (el patrón se repite en 3 tickers, no parece
+azar total). Lo más honesto es: **"overnight + una reducción de frecuencia de
+entrada específica mejora el resultado en esta muestra, pero no por el mecanismo
+que se había asumido (calidad de señal vía C9), y con una base de trades demasiado
+pequeña y sensible a casos individuales para confiar en ella sin más evidencia."**
+
+**Siguiente paso recomendado (no ejecutado, pendiente de decisión):** probar overnight
+con el gate C1-C8 completo (sin C9) pero forzando el mismo espaciado que produce C9
+por otra vía (p. ej. un cooldown de N barras tras cada cierre) — separaría el efecto
+de espaciado del efecto de C9 de forma limpia.
+
